@@ -1,9 +1,10 @@
 """
-ASGI entrypoint — run from `backend/`:
+ASGI entrypoint — run from the `backend/` directory:
 
     uvicorn main:app --reload
 
-Daily sports betting picks API. Set THE_ODDS_API_KEY for live odds (the-odds-api.com).
+Static UI is served from `../frontend/` (mounted at `/assets`, HTML at `/`).
+Set THE_ODDS_API_KEY for live odds (the-odds-api.com).
 """
 
 from app.main import app
