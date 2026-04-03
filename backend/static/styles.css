@@ -305,6 +305,34 @@ main {
   font-style: italic;
 }
 
+.support-table-wrap {
+  width: 100%;
+  overflow-x: auto;
+  margin: 0.75rem 0 1.25rem;
+  -webkit-overflow-scrolling: touch;
+}
+
+.support-league-table {
+  width: 100%;
+  min-width: min(100%, 520px);
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+
+.support-league-table th,
+.support-league-table td {
+  border: 1px solid var(--border);
+  padding: 0.55rem 0.75rem;
+  vertical-align: top;
+  text-align: left;
+}
+
+.support-league-table th {
+  font-weight: 600;
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text);
+}
+
 .banner {
   padding: 0.85rem 1rem;
   border-radius: var(--radius);
@@ -410,6 +438,15 @@ main {
   display: block;
 }
 
+.league-tile-img {
+  width: 100%;
+  height: 100%;
+  max-width: 88px;
+  max-height: 88px;
+  object-fit: contain;
+  display: block;
+}
+
 .league-tile-label {
   font-size: 1rem;
   font-weight: 700;
@@ -453,9 +490,12 @@ main {
   justify-content: center;
 }
 
-.view-header-icon .league-tile-svg {
+.view-header-icon .league-tile-svg,
+.view-header-icon .league-tile-img {
   width: 52px;
   height: 52px;
+  max-width: 52px;
+  max-height: 52px;
 }
 
 .view-title {

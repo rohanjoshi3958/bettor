@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Supported leagues &amp; markets — Bettor</title>
+    <link rel="icon" href="/favicon.ico" type="image/svg+xml" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,500&family=JetBrains+Mono:wght@500&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/assets/styles.css" />
+  </head>
+  <body>
+    <div class="bg-grid"></div>
+    <header class="header">
+      <div class="brand">
+        <span class="logo" aria-hidden="true">◆</span>
+        <div>
+          <h1>Bettor</h1>
+          <p class="tagline">Leagues and bet types covered here</p>
+        </div>
+      </div>
+      <nav class="site-nav" aria-label="Site">
+        <a href="/" class="nav-tab">Picks</a>
+        <a href="/how-it-works" class="nav-tab">How it works</a>
+        <a href="/supported-leagues" class="nav-tab nav-tab-active" aria-current="page">Leagues</a>
+      </nav>
+    </header>
+
+    <main class="doc-page">
+      <article class="doc">
+        <h2 class="doc-title">Overview</h2>
+        <p>
+          Odds come from
+          <a href="https://the-odds-api.com/" rel="noopener noreferrer">The Odds API</a>.
+          Only the leagues below are included. What you see on a given day still depends on who is
+          playing, which sportsbooks post lines, and the filters described on
+          <a href="/how-it-works">How it works</a>.
+        </p>
+
+        <h2 class="doc-title">Leagues</h2>
+        <p>
+          Soccer competitions use <strong>match winner</strong> odds (who wins, or a draw when
+          offered). Basketball, football, and baseball use the player-focused bet types listed in
+          the sections below.
+        </p>
+        <div class="support-table-wrap">
+          <table class="support-league-table">
+            <thead>
+              <tr>
+                <th scope="col">League</th>
+                <th scope="col">What this app includes</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>NBA</td>
+                <td>Player props — see list below</td>
+              </tr>
+              <tr>
+                <td>NFL</td>
+                <td>Player props — see list below</td>
+              </tr>
+              <tr>
+                <td>MLB</td>
+                <td>Batter home run props — see list below</td>
+              </tr>
+              <tr>
+                <td>Premier League</td>
+                <td>Match winner (moneyline)</td>
+              </tr>
+              <tr>
+                <td>La Liga</td>
+                <td>Match winner (moneyline)</td>
+              </tr>
+              <tr>
+                <td>Serie A</td>
+                <td>Match winner (moneyline)</td>
+              </tr>
+              <tr>
+                <td>Bundesliga</td>
+                <td>Match winner (moneyline)</td>
+              </tr>
+              <tr>
+                <td>Ligue 1</td>
+                <td>Match winner (moneyline)</td>
+              </tr>
+              <tr>
+                <td>UEFA Champions League</td>
+                <td>Match winner (moneyline)</td>
+              </tr>
+              <tr>
+                <td>UEFA Europa League</td>
+                <td>Match winner (moneyline)</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h2 class="doc-title">NBA — player props</h2>
+        <p>Lines may appear for any of these stat types (including over/under where offered):</p>
+        <ul class="doc-list">
+          <li>Points</li>
+          <li>Rebounds</li>
+          <li>Assists</li>
+          <li>Three-pointers made</li>
+          <li>Points + rebounds + assists combined</li>
+          <li>Points + rebounds combined</li>
+          <li>Points + assists combined</li>
+          <li>Rebounds + assists combined</li>
+        </ul>
+
+        <h2 class="doc-title">NFL — player props</h2>
+        <ul class="doc-list">
+          <li>Passing yards</li>
+          <li>Passing touchdowns</li>
+          <li>Rushing yards</li>
+          <li>Receiving yards</li>
+          <li>Receptions</li>
+          <li>Anytime touchdown scorer</li>
+        </ul>
+
+        <h2 class="doc-title">MLB — home runs</h2>
+        <ul class="doc-list">
+          <li>To hit a home run</li>
+          <li>Alternate home run lines (when books offer them)</li>
+        </ul>
+
+        <h2 class="doc-title">Soccer — match winner</h2>
+        <p>
+          For each soccer league in the table, picks are built from <strong>match winner</strong>
+          prices — typically backing a team to win, or a draw when that side is listed. Player props
+          are not used for soccer in this app.
+        </p>
+
+        <h2 class="doc-title">Sportsbooks</h2>
+        <p>
+          Lines are compared across DraftKings, FanDuel, and Fanatics. A pick needs the same outcome
+          priced at at least two of those books. Details are on
+          <a href="/how-it-works">How it works</a>.
+        </p>
+      </article>
+    </main>
+
+    <footer class="footer">
+      <span>For information only. Gamble responsibly.</span>
+    </footer>
+  </body>
+</html>

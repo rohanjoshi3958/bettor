@@ -1,0 +1,1 @@
+"""Bettor web application package."""
