@@ -26,3 +26,8 @@ def supported_leagues():
 @router.get("/favicon.ico")
 def favicon():
     return FileResponse(STATIC / "favicon.svg")
+
+
+@router.get("/favicon.svg")
+def favicon_svg():
+    return FileResponse(STATIC / "favicon.svg")

@@ -23,4 +23,8 @@ app.add_middleware(
 app.include_router(picks_router)
 app.include_router(pages_router)
 
-app.mount("/assets", StaticFiles(directory=str(STATIC)), name="assets")
+app.mount(
+    "/assets",
+    StaticFiles(directory=str(STATIC / "assets")),
+    name="assets",
+)

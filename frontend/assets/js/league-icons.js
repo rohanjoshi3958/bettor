@@ -1,10 +1,10 @@
 /**
- * League visuals: raster assets under /assets/js/ (files live in repo `frontend/js/`).
+ * League visuals: raster assets under /assets/js/ (repo path `frontend/assets/js/`).
  */
 
 const ASSET = "/assets/js";
 
-/** Odds API `sport_key` → filename in frontend/js/ */
+/** Odds API `sport_key` → filename in frontend/assets/js/ */
 const LEAGUE_IMAGE = {
   basketball_nba: "nba.png",
   americanfootball_nfl: "nfl.jpeg",

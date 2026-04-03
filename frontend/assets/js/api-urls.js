@@ -1,5 +1,11 @@
+import { API_BASE } from "./config.js";
 import { browserTz } from "./constants.js";
 import { getGameDateString } from "./picks-session.js";
+
+function apiPath(path) {
+  const base = API_BASE.replace(/\/$/, "");
+  return `${base}${path.startsWith("/") ? path : `/${path}`}`;
+}
 
 export function picksUrl() {
   const date = getGameDateString();
@@ -8,7 +14,7 @@ export function picksUrl() {
     timezone: browserTz,
     picks_per_game: "3",
   });
-  return `/api/picks?${params.toString()}`;
+  return `${apiPath("/api/picks")}?${params.toString()}`;
 }
 
 export function singleGamePicksUrl(sportKey, eventId) {
@@ -20,5 +26,5 @@ export function singleGamePicksUrl(sportKey, eventId) {
     timezone: browserTz,
     picks_per_game: "3",
   });
-  return `/api/picks/game?${params.toString()}`;
+  return `${apiPath("/api/picks/game")}?${params.toString()}`;
 }
