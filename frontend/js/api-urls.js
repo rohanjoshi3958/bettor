@@ -6,7 +6,7 @@ export function picksUrl() {
   const params = new URLSearchParams({
     date,
     timezone: browserTz,
-    picks_per_game: "5",
+    picks_per_game: "3",
   });
   return `/api/picks?${params.toString()}`;
 }
@@ -18,7 +18,7 @@ export function singleGamePicksUrl(sportKey, eventId) {
     event_id: eventId,
     date,
     timezone: browserTz,
-    picks_per_game: "5",
+    picks_per_game: "3",
   });
   return `/api/picks/game?${params.toString()}`;
 }

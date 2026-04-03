@@ -11,6 +11,18 @@ import { cloneGames, slatePickTotal } from "./slate-model.js";
 import { renderGameList } from "./slate-views.js";
 import { maybeBackfillEmptyPropGames } from "./picks-refresh.js";
 
+/** Cached slate: `{ games, picksPerGame }` or legacy plain `games[]`. */
+function gamesFromSlateEntry(entry) {
+  if (!entry) return null;
+  if (Array.isArray(entry)) return entry;
+  return entry.games ?? null;
+}
+
+function picksPerGameFromSlateEntry(entry) {
+  if (!entry || Array.isArray(entry)) return undefined;
+  return entry.picksPerGame;
+}
+
 export async function loadPicks() {
   clampGameDateToBounds();
   const requestedDate = getGameDateString();
@@ -84,17 +96,30 @@ export async function loadPicks() {
 
     const games = data.games || [];
     const responseDate = data.game_date || requestedDate;
+    const ppgRaw = Number(data.picks_per_game);
+    const picksPerGame =
+      Number.isFinite(ppgRaw) && ppgRaw >= 1 ? ppgRaw : 3;
 
     if (games.length > 0) {
-      const prevSnap = picksSession.lastGoodSlateByDate.get(responseDate);
+      const prevEntry = picksSession.lastGoodSlateByDate.get(responseDate);
+      const prevSnap = gamesFromSlateEntry(prevEntry);
+      const prevPpg = picksPerGameFromSlateEntry(prevEntry);
       const nextTotal = slatePickTotal(games);
       const prevTotal = prevSnap ? slatePickTotal(prevSnap) : 0;
-      if (!prevSnap || nextTotal >= prevTotal) {
-        picksSession.lastGoodSlateByDate.set(responseDate, cloneGames(games));
-      }
+      const samePicksPerGameSetting =
+        prevPpg !== undefined && prevPpg === picksPerGame;
       const cachedBetter =
-        prevSnap && prevTotal > 0 && prevTotal > nextTotal;
+        Boolean(prevSnap) &&
+        prevTotal > 0 &&
+        prevTotal > nextTotal &&
+        samePicksPerGameSetting;
       const toRender = cachedBetter ? cloneGames(prevSnap) : games;
+      if (!cachedBetter) {
+        picksSession.lastGoodSlateByDate.set(responseDate, {
+          games: cloneGames(games),
+          picksPerGame: picksPerGame,
+        });
+      }
       if (els.staleSlateBanner) els.staleSlateBanner.classList.add("hidden");
       if (cachedBetter) els.relaxedBanner?.classList.add("hidden");
       els.empty.classList.add("hidden");
@@ -103,9 +128,10 @@ export async function loadPicks() {
       return;
     }
 
-    const cached =
+    const rawCached =
       picksSession.lastGoodSlateByDate.get(responseDate) ||
       picksSession.lastGoodSlateByDate.get(requestedDate);
+    const cached = gamesFromSlateEntry(rawCached);
     if (cached && cached.length > 0) {
       els.empty.classList.add("hidden");
       if (els.staleSlateBanner) {

@@ -45,7 +45,7 @@ _RANK_IMPLIED_WEIGHT = 0.55
 _RANK_EDGE_WEIGHT = 0.45
 
 # Top picks to keep per game (grouped by event).
-PICKS_PER_GAME = 5
+PICKS_PER_GAME = 3
 
 
 def _normalize_event_id(raw: Any) -> str:

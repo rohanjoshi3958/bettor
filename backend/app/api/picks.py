@@ -21,6 +21,22 @@ from services.picks_cache import cached_fetch, picks_cache_ttl_seconds
 router = APIRouter(prefix="/api", tags=["picks"])
 
 
+def _cap_picks(game: dict | None, ppg: int) -> None:
+    """Ensure responses never exceed the requested picks_per_game (guards cache / merge edge cases)."""
+    if not game:
+        return
+    picks = game.get("picks") or []
+    if len(picks) > ppg:
+        game["picks"] = picks[:ppg]
+
+
+def _cap_slate_games(games: list[dict], ppg: int) -> None:
+    for g in games:
+        picks = g.get("picks") or []
+        if len(picks) > ppg:
+            g["picks"] = picks[:ppg]
+
+
 @router.get("/health")
 def health():
     return {"ok": True, "live_odds": bool(get_api_key())}
@@ -73,6 +89,7 @@ async def picks(
         odds_api_warning,
     ), cache_hit = await cached_fetch(cache_key, _load_slate)
 
+    _cap_slate_games(rows, picks_per_game)
     pick_count = sum(len(g.get("picks") or []) for g in rows)
     cache_hdr = (
         "hit"
@@ -154,6 +171,7 @@ async def picks_one_game(
         odds_api_warning,
     ), cache_hit = await cached_fetch(cache_key, _load_game)
 
+    _cap_picks(game, picks_per_game)
     pick_count = len((game or {}).get("picks") or [])
     cache_hdr = (
         "hit"

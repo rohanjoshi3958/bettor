@@ -9,7 +9,7 @@ export const picksSession = {
   navState: { view: "leagues" },
   /** Last calendar day the user chose (or server confirmed). */
   lastExplicitGameDate: null,
-  /** Per YYYY-MM-DD, best snapshot for that day (session only). */
+  /** Per YYYY-MM-DD, `{ games, picksPerGame }` or legacy games array (session only). */
   lastGoodSlateByDate: new Map(),
   picksFetchController: null,
   picksBackfillGeneration: 0,
