@@ -9,6 +9,9 @@ frontend:
         - |
           if [ -n "$BETTOR_API_URL" ]; then
             printf "/**\n * Injected by Amplify preBuild (BETTOR_API_URL).\n */\nexport const API_BASE = '%s';\n" "${BETTOR_API_URL%/}" > frontend/assets/js/config.js
+            echo "BETTOR_API_URL is set; config.js will call the remote API."
+          else
+            echo "WARNING: BETTOR_API_URL is not set. The deployed site will request /api/* on Amplify and get 404 unless you add BETTOR_API_URL here or a reverse-proxy rule to your FastAPI backend."
           fi
     build:
       commands:

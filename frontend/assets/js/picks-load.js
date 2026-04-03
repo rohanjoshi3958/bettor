@@ -2,6 +2,7 @@ import { browserTz } from "./constants.js";
 import { els } from "./elements.js";
 import { readHttpErrorDetail } from "./fetch-utils.js";
 import { picksUrl } from "./api-urls.js";
+import { API_BASE } from "./config.js";
 import {
   picksSession,
   getGameDateString,
@@ -43,7 +44,19 @@ export async function loadPicks() {
       cache: "no-store",
       signal,
     });
-    if (!res.ok) throw new Error(await readHttpErrorDetail(res));
+    if (!res.ok) {
+      if (
+        res.status === 404 &&
+        !String(API_BASE ?? "").trim() &&
+        typeof window !== "undefined" &&
+        /amplifyapp\.com$|\.amplifyaws\.com$/i.test(window.location.hostname)
+      ) {
+        throw new Error(
+          "Picks API is not on this static host (404). In Amplify: App → Hosting → Environment variables, add BETTOR_API_URL = your FastAPI base URL (no trailing slash, e.g. https://…amazonaws.com or App Runner URL), then redeploy. Or run the API locally and open the app from that server instead of Amplify.",
+        );
+      }
+      throw new Error(await readHttpErrorDetail(res));
+    }
     const data = await res.json();
 
     if (signal.aborted) return;
