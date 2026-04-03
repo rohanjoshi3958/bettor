@@ -1,0 +1,62 @@
+# Deploy static site from frontend/ to GitHub Pages.
+#
+# One-time setup:
+# 1. Repo → Settings → Pages → Build: GitHub Actions, save.
+# 2. Repo → Settings → Pages → Custom domain: rohanjoshi.net (adds DNS check).
+# 3. At your DNS host for rohanjoshi.net, add either:
+#    - Apex: A records to GitHub Pages IPs (see https://docs.github.com/en/pages/configuring-a-custom-domain-for-your-github-pages-site/managing-a-custom-domain-for-your-github-pages-site#configuring-an-apex-domain)
+#    - Or www: CNAME www → <user>.github.io
+# 4. Optional: Settings → Secrets → Actions → BETTOR_API_BASE_URL = your FastAPI HTTPS origin
+#    (GitHub Pages cannot run Python; picks need a hosted API + CORS allowing rohanjoshi.net)
+
+name: Deploy GitHub Pages
+
+on:
+  push:
+    branches: [main, master]
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure Pages
+        uses: actions/configure-pages@v4
+
+      - name: Assemble site
+        env:
+          API_BASE_URL: ${{ secrets.BETTOR_API_BASE_URL }}
+        run: |
+          set -e
+          mkdir -p _site
+          cp -a frontend/. _site/
+          mkdir -p _site/how-it-works _site/supported-leagues
+          cp _site/how-it-works.html _site/how-it-works/index.html
+          cp _site/supported-leagues.html _site/supported-leagues/index.html
+          touch _site/.nojekyll
+          if [ -n "$API_BASE_URL" ]; then
+            printf '%s\n' "/** Injected in CI from BETTOR_API_BASE_URL */" > _site/assets/js/config.js
+            printf 'export const API_BASE = "%s";\n' "${API_BASE_URL%/}" >> _site/assets/js/config.js
+          fi
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

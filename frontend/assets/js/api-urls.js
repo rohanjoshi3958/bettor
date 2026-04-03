@@ -3,7 +3,7 @@ import { browserTz } from "./constants.js";
 import { getGameDateString } from "./picks-session.js";
 
 function apiPath(path) {
-  const base = API_BASE.replace(/\/$/, "");
+  const base = String(API_BASE ?? "").replace(/\/$/, "");
   return `${base}${path.startsWith("/") ? path : `/${path}`}`;
 }
 

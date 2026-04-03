@@ -1,6 +1,5 @@
 /**
- * Base URL for API calls (no trailing slash).
- * Empty string = same origin as the page (local dev + FastAPI, or proxied API).
- * For split hosting, set Amplify env BETTOR_API_URL and inject in amplify.yml preBuild.
+ * API origin (no trailing slash). Empty = same origin as the page.
+ * For GitHub Pages, set repository secret BETTOR_API_BASE_URL (e.g. https://api.example.com).
  */
 export const API_BASE = "";
