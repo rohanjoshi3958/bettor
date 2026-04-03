@@ -2,7 +2,7 @@
 Daily sports betting picks API. Set THE_ODDS_API_KEY for live odds (the-odds-api.com).
 """
 
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -21,6 +21,7 @@ from services.odds_service import (
     get_api_key,
     supported_sport_key,
 )
+from services.picks_cache import cached_fetch, picks_cache_ttl_seconds
 
 ROOT = Path(__file__).resolve().parent
 STATIC = ROOT / "static"
@@ -29,6 +30,34 @@ load_dotenv(ROOT.parent / ".env")
 load_dotenv(ROOT / ".env", override=True)
 
 app = FastAPI(title="Bettor", version="1.0.0")
+
+# Pickable game days in the request TZ: today through (today + this offset), inclusive.
+# Example: offset 5 → today plus five more calendar days (six dates total).
+PICKS_FUTURE_END_OFFSET = 5
+
+
+def _pickable_game_day_bounds(z: ZoneInfo) -> tuple[date, date]:
+    today = datetime.now(z).date()
+    last = today + timedelta(days=PICKS_FUTURE_END_OFFSET)
+    return today, last
+
+
+def _default_pickable_game_day(z: ZoneInfo) -> date:
+    first, _ = _pickable_game_day_bounds(z)
+    return first
+
+
+def _enforce_pickable_game_day(for_day: date, z: ZoneInfo) -> None:
+    first, last = _pickable_game_day_bounds(z)
+    if for_day < first or for_day > last:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Game day must be from {first.isoformat()} through {last.isoformat()} "
+                f"(today through {PICKS_FUTURE_END_OFFSET} days ahead in your timezone)."
+            ),
+        ) from None
+
 
 app.add_middleware(
     CORSMiddleware,
@@ -63,23 +92,40 @@ async def picks(
         except ValueError:
             raise HTTPException(status_code=400, detail="Invalid date=YYYY-MM-DD") from None
     else:
-        for_day = datetime.now(z).date()
+        for_day = _default_pickable_game_day(z)
+
+    _enforce_pickable_game_day(for_day, z)
 
     key = get_api_key()
+    mg_part = "" if max_games is None else str(max_games)
+    cache_key = (
+        f"s|{for_day.isoformat()}|{tz_name}|{picks_per_game}|{mg_part}|"
+        f"{1 if (key and key.strip()) else 0}"
+    )
+
+    async def _load_slate():
+        return await fetch_best_picks(
+            key,
+            picks_per_game=picks_per_game,
+            max_games=max_games,
+            for_day=for_day,
+            timezone_name=tz_name,
+        )
+
     (
         rows,
         source,
         min_implied_used,
         used_relaxed_fallback,
         odds_api_warning,
-    ) = await fetch_best_picks(
-        key,
-        picks_per_game=picks_per_game,
-        max_games=max_games,
-        for_day=for_day,
-        timezone_name=tz_name,
-    )
+    ), cache_hit = await cached_fetch(cache_key, _load_slate)
+
     pick_count = sum(len(g.get("picks") or []) for g in rows)
+    cache_hdr = (
+        "hit"
+        if cache_hit
+        else ("bypass" if picks_cache_ttl_seconds() <= 0 else "miss")
+    )
     return JSONResponse(
         {
             "source": source,
@@ -95,7 +141,10 @@ async def picks(
             "odds_api_warning": odds_api_warning,
             "games": rows,
         },
-        headers={"Cache-Control": "no-store, must-revalidate"},
+        headers={
+            "Cache-Control": "no-store, must-revalidate",
+            "X-Picks-Cache": cache_hdr,
+        },
     )
 
 
@@ -122,24 +171,42 @@ async def picks_one_game(
         except ValueError:
             raise HTTPException(status_code=400, detail="Invalid date=YYYY-MM-DD") from None
     else:
-        for_day = datetime.now(z).date()
+        for_day = _default_pickable_game_day(z)
+
+    _enforce_pickable_game_day(for_day, z)
 
     key = get_api_key()
+    sk = sport_key.strip()
+    eid = event_id.strip()
+    cache_key = (
+        f"g|{sk}|{eid}|{for_day.isoformat()}|{tz_name}|{picks_per_game}|"
+        f"{1 if (key and key.strip()) else 0}"
+    )
+
+    async def _load_game():
+        return await fetch_picks_for_event(
+            key,
+            sport_key=sk,
+            event_id=eid,
+            for_day=for_day,
+            timezone_name=tz_name,
+            picks_per_game=picks_per_game,
+        )
+
     (
         game,
         source,
         min_implied_used,
         used_relaxed_fallback,
         odds_api_warning,
-    ) = await fetch_picks_for_event(
-        key,
-        sport_key=sport_key.strip(),
-        event_id=event_id.strip(),
-        for_day=for_day,
-        timezone_name=tz_name,
-        picks_per_game=picks_per_game,
-    )
+    ), cache_hit = await cached_fetch(cache_key, _load_game)
+
     pick_count = len((game or {}).get("picks") or [])
+    cache_hdr = (
+        "hit"
+        if cache_hit
+        else ("bypass" if picks_cache_ttl_seconds() <= 0 else "miss")
+    )
     return JSONResponse(
         {
             "source": source,
@@ -154,7 +221,10 @@ async def picks_one_game(
             "used_relaxed_implied_fallback": used_relaxed_fallback,
             "odds_api_warning": odds_api_warning,
         },
-        headers={"Cache-Control": "no-store, must-revalidate"},
+        headers={
+            "Cache-Control": "no-store, must-revalidate",
+            "X-Picks-Cache": cache_hdr,
+        },
     )
 
 

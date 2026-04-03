@@ -1,8 +1,12 @@
 """
 Fetches odds from The Odds API (https://the-odds-api.com/).
 
-- Soccer (EU leagues + MLS): bulk /odds, moneyline (h2h) line-shopping edge.
+- Soccer (EU leagues): bulk /odds, moneyline (h2h) line-shopping edge.
 - NBA / NFL props, MLB HR: per-event /events/{id}/odds (player markets).
+
+Slate rules are the same for every league: every game returned for the requested day is listed
+(including live/started games today); kickoff order is consistent. Prop odds are only fetched for
+up to MAX_PROP_EVENTS_PER_SPORT not-started games per prop sport to limit API usage.
 """
 
 from __future__ import annotations
@@ -19,13 +23,12 @@ import httpx
 
 ODDS_BASE = "https://api.the-odds-api.com/v4"
 
-# Only these books (The Odds API keys). theScore Bet is `espnbet` in region us2.
+# Only these books (The Odds API keys).
 ALLOWED_BOOKMAKER_KEYS: frozenset[str] = frozenset(
-    {"draftkings", "fanduel", "fanatics", "espnbet"}
+    {"draftkings", "fanduel", "fanatics"}
 )
-_BOOKMAKERS_PARAM = "draftkings,fanduel,fanatics,espnbet"
-# us = DK / FD / Fanatics; us2 = theScore Bet (espnbet)
-_ODDS_REGIONS = "us,us2"
+_BOOKMAKERS_PARAM = "draftkings,fanduel,fanatics"
+_ODDS_REGIONS = "us"
 
 # Prop coverage cap (each event = extra API calls). Override via env to save quota.
 MAX_PROP_EVENTS_PER_SPORT = int(os.environ.get("MAX_PROP_EVENTS_PER_SPORT", "20"))
@@ -138,22 +141,29 @@ def _event_dict_to_shell(ev: dict[str, Any], sport_key: str, sport_title: str) -
     }
 
 
+def shells_from_scheduled_events(
+    events: list[dict[str, Any]],
+    sport_key: str,
+    sport_title: str,
+) -> list[dict[str, Any]]:
+    """One shell per event in the API payload, same kickoff sort for soccer (bulk) and props (/events)."""
+    return [
+        _event_dict_to_shell(ev, sport_key, sport_title)
+        for ev in _events_sorted_by_kickoff(events)
+    ]
+
+
 def _filter_shells_by_game_day(
     shells: list[dict[str, Any]], for_day: date, tz_name: str
 ) -> list[dict[str, Any]]:
-    """Same calendar-day + hide-started-today rules as filter_picks_by_game_day."""
+    """Keep shells on `for_day` in `tz_name` (includes live / started games so leagues stay visible)."""
     start_utc, end_utc = local_day_bounds_utc(for_day, tz_name)
-    z = _zone(tz_name)
-    today_user = datetime.now(z).date()
-    now_utc = datetime.now(timezone.utc)
     out: list[dict[str, Any]] = []
     for s in shells:
         ct = _commence_time_utc(s.get("commence_time") or "")
         if ct is None:
             continue
         if not (start_utc <= ct < end_utc):
-            continue
-        if for_day == today_user and ct <= now_utc:
             continue
         out.append(s)
     return out
@@ -255,7 +265,6 @@ SOCCER_SPORT_KEYS = (
     "soccer_italy_serie_a",
     "soccer_germany_bundesliga",
     "soccer_france_ligue",
-    "soccer_usa_mls",
     "soccer_uefa_champs_league",
     "soccer_uefa_europa_league",
 )
@@ -295,7 +304,6 @@ def _sport_titles() -> dict[str, str]:
         "soccer_italy_serie_a": "Serie A",
         "soccer_germany_bundesliga": "Bundesliga",
         "soccer_france_ligue": "Ligue 1",
-        "soccer_usa_mls": "MLS",
         "soccer_uefa_champs_league": "UCL",
         "soccer_uefa_europa_league": "Europa League",
     }
@@ -412,7 +420,7 @@ def demo_picks(for_day: date, tz_name: str) -> list[BetPick]:
             market_key="player_threes",
             implied_probability=round(implied_probability(1.57), 4),
             best_decimal_odds=1.57,
-            best_book="theScore Bet",
+            best_book="FanDuel",
             avg_decimal_odds=1.52,
             edge_pct=2.4,
         ),
@@ -472,24 +480,9 @@ def demo_picks(for_day: date, tz_name: str) -> list[BetPick]:
             market_key="batter_home_runs",
             implied_probability=round(implied_probability(1.68), 4),
             best_decimal_odds=1.68,
-            best_book="theScore Bet",
+            best_book="DraftKings",
             avg_decimal_odds=1.63,
             edge_pct=3.1,
-        ),
-        BetPick(
-            sport_key="soccer_usa_mls",
-            sport_title=titles["soccer_usa_mls"],
-            event_id="demo-mls",
-            home_team="LA Galaxy",
-            away_team="Seattle Sounders",
-            commence_time=_demo_commence_on_day(for_day, tz_name, 21, 0),
-            pick="LA Galaxy",
-            market_key="h2h",
-            implied_probability=round(implied_probability(1.72), 4),
-            best_decimal_odds=1.72,
-            best_book="DraftKings",
-            avg_decimal_odds=1.67,
-            edge_pct=3.0,
         ),
     ]
 
@@ -704,8 +697,9 @@ async def _fetch_bulk_h2h(
         events = r.json()
         if not isinstance(events, list):
             return [], []
-        picks = _h2h_events_to_picks(events, sport_key, sport_title)
-        shells = [_event_dict_to_shell(ev, sport_key, sport_title) for ev in events]
+        ordered = _events_sorted_by_kickoff(events)
+        picks = _h2h_events_to_picks(ordered, sport_key, sport_title)
+        shells = shells_from_scheduled_events(events, sport_key, sport_title)
         return picks, shells
     except httpx.HTTPStatusError as e:
         if e.response is not None:
@@ -760,51 +754,61 @@ async def _fetch_event_props(
         "markets": markets_csv,
         "oddsFormat": "decimal",
     }
-    try:
-        r = await client.get(url, params=params, timeout=45.0)
-        r.raise_for_status()
-        ev = r.json()
-        if not isinstance(ev, dict):
+    for attempt in range(2):
+        try:
+            r = await client.get(url, params=params, timeout=45.0)
+            r.raise_for_status()
+            ev = r.json()
+            if not isinstance(ev, dict):
+                return []
+            return _prop_event_to_picks(ev, sport_key, sport_title, allowed)
+        except httpx.HTTPStatusError as e:
+            code = e.response.status_code if e.response is not None else 0
+            if e.response is not None:
+                _note_odds_api_quota_issue(quota_events, code)
+            if attempt == 0 and code == 429:
+                await asyncio.sleep(1.2)
+                continue
             return []
-        return _prop_event_to_picks(ev, sport_key, sport_title, allowed)
-    except httpx.HTTPStatusError as e:
-        if e.response is not None:
-            _note_odds_api_quota_issue(quota_events, e.response.status_code)
-        return []
-    except httpx.HTTPError:
-        return []
+        except httpx.TimeoutException:
+            if attempt == 0:
+                await asyncio.sleep(0.6)
+                continue
+            return []
+        except httpx.HTTPError:
+            return []
+    return []
+
+
+def _event_commence_utc(ev: dict[str, Any]) -> datetime | None:
+    raw = ev.get("commence_time") or ""
+    return _commence_time_utc(raw)
+
+
+def _events_sorted_by_kickoff(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """All /events rows, sorted by kickoff (unknown times last), stable by id."""
+    keyed: list[tuple[datetime, str, dict[str, Any]]] = []
+    for ev in events:
+        ct = _event_commence_utc(ev)
+        eid = str(ev.get("id") or "")
+        sort_t = ct if ct is not None else datetime.max.replace(tzinfo=timezone.utc)
+        keyed.append((sort_t, eid, ev))
+    keyed.sort(key=lambda x: (x[0], x[1]))
+    return [t[2] for t in keyed]
 
 
 def _events_upcoming_sorted_for_props(
     events: list[dict[str, Any]],
     cap: int,
 ) -> list[dict[str, Any]]:
-    """Not-started events in the /events response, sorted deterministically (time, then id).
-
-    Previously we took only the first N by time with unstable tie-breaking and a low cap, so
-    reloads could swap which games received prop fetches and the slate looked random.
-    """
+    """Not-started events only, sorted by kickoff; cap limits Odds API /events/{{id}}/odds volume."""
     now = datetime.now(timezone.utc)
-    upcoming: list[tuple[datetime | None, dict[str, Any]]] = []
-    for ev in events:
-        raw = ev.get("commence_time") or ""
-        ct = _parse_commence(raw)
-        if ct is not None and ct.tzinfo is None:
-            ct = ct.replace(tzinfo=timezone.utc)
-        if ct is not None and ct <= now:
-            continue
-        upcoming.append((ct, ev))
-
-    def sort_key(item: tuple[datetime | None, dict[str, Any]]) -> tuple[datetime, str]:
-        t, ev = item
-        eid = str(ev.get("id") or "")
-        if t is None:
-            return (datetime.max.replace(tzinfo=timezone.utc), eid)
-        return (t, eid)
-
-    upcoming.sort(key=sort_key)
-    chosen = [ev for _, ev in upcoming]
-    return chosen[:cap] if cap > 0 else chosen
+    out: list[dict[str, Any]] = []
+    for ev in _events_sorted_by_kickoff(events):
+        ct = _event_commence_utc(ev)
+        if ct is None or ct > now:
+            out.append(ev)
+    return out[:cap] if cap > 0 else out
 
 
 async def _fetch_prop_sport(
@@ -821,8 +825,9 @@ async def _fetch_prop_sport(
     events = await _fetch_events(
         client, api_key, sport_key, commence_time_from, commence_time_to, quota_events
     )
+    # List every game in the API window in the UI; only fetch props for the first N not-started.
+    shells = shells_from_scheduled_events(events, sport_key, sport_title)
     chosen = _events_upcoming_sorted_for_props(events, MAX_PROP_EVENTS_PER_SPORT)
-    shells = [_event_dict_to_shell(ev, sport_key, sport_title) for ev in chosen]
     if not chosen:
         return [], shells
     sem = asyncio.Semaphore(_PROP_FETCH_CONCURRENCY)
@@ -968,7 +973,8 @@ async def fetch_picks_for_event(
     games, mi_used, relaxed = _group_with_implied_fallback(
         picks, picks_per_game, max_games=1
     )
-    warn = _odds_api_warning_message(quota_events)
+    has_picks = any(len(g.get("picks") or []) > 0 for g in games)
+    warn = _odds_api_warning_message(quota_events, has_usable_response=has_picks)
     for g in games:
         if _normalize_event_id(g.get("event_id")) == eid_norm:
             return g, "live", mi_used, relaxed, warn
@@ -977,16 +983,33 @@ async def fetch_picks_for_event(
     return None, "live", mi_used, relaxed, warn
 
 
-def _odds_api_warning_message(quota_events: list[str]) -> str | None:
+def _odds_api_warning_message(
+    quota_events: list[str],
+    *,
+    has_usable_response: bool,
+) -> str | None:
+    """If `has_usable_response`, soften copy: one 429 among many parallel calls is common."""
     if not quota_events:
         return None
     if "rate_limit" in quota_events:
+        if has_usable_response:
+            return (
+                "Some Odds API requests hit HTTP 429 (rate limit), so part of the slate may be "
+                "missing. Wait before reloading; you can lower MAX_PROP_EVENTS_PER_SPORT or "
+                "ODDS_PROP_CONCURRENCY. Check usage at the-odds-api.com."
+            )
         return (
             "The Odds API returned rate limits (HTTP 429). Wait before reloading. "
             "You can lower usage with env MAX_PROP_EVENTS_PER_SPORT and ODDS_PROP_CONCURRENCY. "
             "Check remaining quota at the-odds-api.com."
         )
     if "payment_required" in quota_events:
+        if has_usable_response:
+            return (
+                "Some Odds API requests returned HTTP 402 (quota or billing). "
+                "You still have data below, but the slate may be incomplete. "
+                "Check your plan at the-odds-api.com."
+            )
         return (
             "The Odds API returned HTTP 402 (quota or billing). "
             "Check your plan and usage at the-odds-api.com."
@@ -1101,7 +1124,10 @@ async def fetch_best_picks(
     merged = _merge_scheduled_with_picks(
         shells_filtered, games, max_games=max_games
     )
-    warn = _odds_api_warning_message(quota_events)
+    warn = _odds_api_warning_message(
+        quota_events,
+        has_usable_response=len(merged) > 0,
+    )
     return merged, "live", mi_used, relaxed, warn
 
 
