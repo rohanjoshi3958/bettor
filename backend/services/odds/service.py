@@ -4,9 +4,10 @@ Fetches odds from The Odds API (https://the-odds-api.com/).
 - Soccer (EU leagues): bulk /odds, moneyline (h2h) line-shopping edge.
 - NBA / NFL props, MLB HR: per-event /events/{id}/odds (player markets).
 
-Slate rules are the same for every league: every game returned for the requested day is listed
-(including live/started games today); kickoff order is consistent. Prop odds are only fetched for
-up to MAX_PROP_EVENTS_PER_SPORT not-started games per prop sport to limit API usage.
+Slate rules are the same for every league: games on the requested calendar day are listed in
+kickoff order, but any game whose scheduled kickoff is already past (started or finished) is
+omitted. Prop odds are only fetched for up to MAX_PROP_EVENTS_PER_SPORT not-started games per
+prop sport to limit API usage.
 """
 
 from __future__ import annotations
@@ -156,7 +157,7 @@ def shells_from_scheduled_events(
 def _filter_shells_by_game_day(
     shells: list[dict[str, Any]], for_day: date, tz_name: str
 ) -> list[dict[str, Any]]:
-    """Keep shells on `for_day` in `tz_name` (includes live / started games so leagues stay visible)."""
+    """Keep shells on `for_day` in `tz_name` (past kickoffs are removed after merge)."""
     start_utc, end_utc = local_day_bounds_utc(for_day, tz_name)
     out: list[dict[str, Any]] = []
     for s in shells:
@@ -234,6 +235,27 @@ def _merge_scheduled_with_picks(
     if max_games is not None and max_games >= 0:
         out = out[:max_games]
     return out
+
+
+def _exclude_past_kickoff_games(games: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Drop games whose scheduled commence time is at or before now (started or finished)."""
+    now_utc = datetime.now(timezone.utc)
+    out: list[dict[str, Any]] = []
+    for g in games:
+        ct = _commence_time_utc(g.get("commence_time") or "")
+        if ct is None:
+            out.append(g)
+            continue
+        if ct > now_utc:
+            out.append(g)
+    return out
+
+
+def _kickoff_still_upcoming(game: dict[str, Any]) -> bool:
+    ct = _commence_time_utc(game.get("commence_time") or "")
+    if ct is None:
+        return True
+    return ct > datetime.now(timezone.utc)
 
 
 def filter_picks_by_game_day(picks: list[BetPick], for_day: date, tz_name: str) -> list[BetPick]:
@@ -916,7 +938,9 @@ async def fetch_picks_for_event(
             picks, picks_per_game, max_games=1
         )
         if games:
-            return games[0], "demo", mi_used, relaxed, None
+            g0 = games[0]
+            if _kickoff_still_upcoming(g0):
+                return g0, "demo", mi_used, relaxed, None
         return None, "demo", mi_used, relaxed, None
 
     key = api_key.strip()
@@ -977,9 +1001,13 @@ async def fetch_picks_for_event(
     warn = _odds_api_warning_message(quota_events, has_usable_response=has_picks)
     for g in games:
         if _normalize_event_id(g.get("event_id")) == eid_norm:
-            return g, "live", mi_used, relaxed, warn
+            if _kickoff_still_upcoming(g):
+                return g, "live", mi_used, relaxed, warn
+            return None, "live", mi_used, relaxed, warn
     if games:
-        return games[0], "live", mi_used, relaxed, warn
+        g0 = games[0]
+        if _kickoff_still_upcoming(g0):
+            return g0, "live", mi_used, relaxed, warn
     return None, "live", mi_used, relaxed, warn
 
 
@@ -1039,6 +1067,7 @@ async def fetch_best_picks(
         )
         shells = _shells_from_bet_picks(demo)
         merged = _merge_scheduled_with_picks(shells, games, max_games=max_games)
+        merged = _exclude_past_kickoff_games(merged)
         return merged, "demo", mi_used, relaxed, None
 
     key = api_key.strip()
@@ -1124,6 +1153,7 @@ async def fetch_best_picks(
     merged = _merge_scheduled_with_picks(
         shells_filtered, games, max_games=max_games
     )
+    merged = _exclude_past_kickoff_games(merged)
     warn = _odds_api_warning_message(
         quota_events,
         has_usable_response=len(merged) > 0,
