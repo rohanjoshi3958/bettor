@@ -1,6 +1,5 @@
 .git
 .github
-frontend
 **/__pycache__
 *.pyc
 .env

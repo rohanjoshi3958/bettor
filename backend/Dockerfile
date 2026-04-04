@@ -1,3 +1,4 @@
+# Build with context `backend/` only — no bundled UI. For deploy, use repo-root `Dockerfile`.
 # Optional: AWS App Runner, ECS, or local `docker run -p 8000:8000`
 FROM python:3.11-slim
 WORKDIR /app

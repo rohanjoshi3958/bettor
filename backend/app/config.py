@@ -8,8 +8,10 @@ from dotenv import load_dotenv
 BACKEND_ROOT = Path(__file__).resolve().parent.parent
 REPO_ROOT = BACKEND_ROOT.parent
 
-# Built UI (HTML, CSS, JS, images) lives beside `backend/`, not inside it.
-STATIC = REPO_ROOT / "frontend"
+# Local dev: `frontend/` is a sibling of `backend/`. Docker: copy `frontend/` into `BACKEND_ROOT/frontend`.
+_static_bundled = BACKEND_ROOT / "frontend"
+_static_repo_sibling = REPO_ROOT / "frontend"
+STATIC = _static_bundled if _static_bundled.is_dir() else _static_repo_sibling
 
 
 def load_environment() -> None:
