@@ -38,8 +38,11 @@ _PROP_FETCH_CONCURRENCY = int(os.environ.get("ODDS_PROP_CONCURRENCY", "4"))
 
 # Market-implied probability = 1 / decimal_odds (naive; not de-vigged).
 # 55% was often too strict with 4 books + 2-book minimum → empty slates; 0.52 primary, 0.50 fallback.
+# MLB props are looser: 0.30 primary, 0.28 relaxed (same ~2pt step as global).
 MIN_IMPLIED_PROBABILITY = 0.52
 RELAXED_IMPLIED_PROBABILITY = 0.50
+MLB_MIN_IMPLIED_PROBABILITY = 0.30
+MLB_RELAXED_IMPLIED_PROBABILITY = 0.28
 
 # Rank = blend of high implied prob + line-shopping edge (best vs avg among your books).
 _RANK_IMPLIED_WEIGHT = 0.55
@@ -1185,6 +1188,16 @@ def picks_to_json(picks: list[BetPick]) -> list[dict[str, Any]]:
     ]
 
 
+def _implied_floor_for_pick(p: BetPick, pass_floor: float) -> float:
+    """Global primary/relaxed floors; MLB (`baseball_mlb`) uses lower thresholds only."""
+    if p.sport_key == "baseball_mlb":
+        if pass_floor == MIN_IMPLIED_PROBABILITY:
+            return MLB_MIN_IMPLIED_PROBABILITY
+        if pass_floor == RELAXED_IMPLIED_PROBABILITY:
+            return MLB_RELAXED_IMPLIED_PROBABILITY
+    return pass_floor
+
+
 def group_picks_into_games(
     picks: list[BetPick],
     picks_per_game: int = PICKS_PER_GAME,
@@ -1194,7 +1207,7 @@ def group_picks_into_games(
 ) -> list[dict[str, Any]]:
     """Group by (sport_key, event_id); keep top `picks_per_game` by rank_score per game."""
     floor = MIN_IMPLIED_PROBABILITY if min_implied is None else min_implied
-    filtered = [p for p in picks if p.implied_probability >= floor]
+    filtered = [p for p in picks if p.implied_probability >= _implied_floor_for_pick(p, floor)]
     by_game: dict[tuple[str, str], list[BetPick]] = defaultdict(list)
     for p in filtered:
         k = _merge_game_key(p.sport_key, p.event_id)

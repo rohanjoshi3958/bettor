@@ -145,9 +145,11 @@
 
         <h2 class="doc-title">Minimum implied filter (and fallback)</h2>
         <p>
-          First, only lines with implied probability <strong>≥ 52%</strong> (from the best
-          decimal) are kept. If that would show nothing useful for the day, the app relaxes once
-          to <strong>≥ 50%</strong> and recomputes — you’ll see a banner when that fallback runs.
+          First, only lines with implied probability (from the best decimal) above a league-specific
+          floor are kept: <strong>≥ 52%</strong> for most sports, <strong>≥ 30%</strong> for
+          <strong>MLB</strong>. If that would show nothing useful for the day, the app relaxes once
+          and recomputes — non-MLB lines use <strong>≥ 50%</strong>, MLB lines
+          <strong>≥ 28%</strong>. You’ll see a banner when that fallback runs.
         </p>
 
         <h2 class="doc-title">Disclaimer</h2>

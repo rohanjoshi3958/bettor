@@ -1,0 +1,16 @@
+# Render Blueprint: https://dashboard.render.com/select-repo?type=blueprint
+# After deploy: Dashboard → this service → Environment → add THE_ODDS_API_KEY
+# Then set GitHub secret BETTOR_API_BASE_URL to your service URL (https://…, no slash).
+
+services:
+  - type: web
+    name: bettor-api
+    runtime: docker
+    plan: free
+    region: oregon
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    healthCheckPath: /api/health
+    envVars:
+      - key: THE_ODDS_API_KEY
+        sync: false
