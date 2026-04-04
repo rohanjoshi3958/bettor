@@ -8,8 +8,8 @@ services:
     runtime: docker
     plan: free
     region: oregon
-    dockerfilePath: ./backend/Dockerfile
-    dockerContext: ./backend
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
     healthCheckPath: /api/health
     envVars:
       - key: THE_ODDS_API_KEY
