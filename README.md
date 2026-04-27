@@ -95,7 +95,7 @@ Useful API checks:
 - `GET /api/picks?date=YYYY-MM-DD&timezone=America/New_York`
 - `GET /api/picks/game?sport_key=baseball_mlb&event_id=<id>&date=YYYY-MM-DD&timezone=America/New_York`
 
-## Testing / Error Handling (Recommended)
+## Testing / Error Handling 
 Testing approach:
 - Manual endpoint validation with different dates/timezones and league selections.
 - Verified empty-state/fallback behavior when thresholds are strict.
@@ -107,12 +107,10 @@ Error handling implemented:
 - Demo/live source signaling for visibility when API key is absent.
 - Deployment-safe static path handling for local and containerized environments.
 
-## Future Improvements / Stretch Goals (Optional)
+## Future Improvements / Stretch Goals 
 - Add automated tests for ranking, threshold/fallback rules, and API contracts.
-- Move cache to Redis for multi-instance consistency.
 - Add historical tracking and trend views by game/market.
 - Add auth/user preferences for leagues, markets, and thresholds.
-- Improve observability with structured logs and latency/error dashboards.
 
-## Link to website URL or application (Optional)
+## Link to website URL or application 
 - Website: `https://rohanjoshi.net`
