@@ -111,6 +111,7 @@ Error handling implemented:
 - Add automated tests for ranking, threshold/fallback rules, and API contracts.
 - Add historical tracking and trend views by game/market.
 - Add auth/user preferences for leagues, markets, and thresholds.
+- Expand the number of suppported sportsbooks
 
 ## Link to website URL or application 
 - Website: `https://rohanjoshi.net`
