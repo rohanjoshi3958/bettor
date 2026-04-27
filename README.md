@@ -1,0 +1,118 @@
+# Project Title
+Bettor - Daily Line Picks
+
+## Problem Statement
+Sports bettors often compare lines across books manually, which is slow and error-prone, especially when props and odds change throughout the day. The people most affected are casual-to-serious bettors who want a quick daily shortlist without scanning every book and market by hand.
+
+This matters because delayed comparisons lead to missed value and inconsistent decisions. If solved, users can open one view and immediately see the best available lines per game. Success looks like fast, repeatable daily workflows: load date -> open league -> open game -> review top picks with clear implied-probability and edge context.
+
+## Solution Overview
+Bettor is a FastAPI + static frontend app that fetches odds, computes implied probability and line-shopping edge, ranks candidates, and surfaces the top lines per game. The UI is organized by league and game, with refresh controls for slate-level or game-level updates.
+
+Key features:
+- League and game drill-down with top 3 ranked lines per game.
+- Implied-probability floor with fallback logic to avoid empty slates.
+- Lightweight caching to reduce repeated upstream calls.
+- Health endpoint and warning propagation for operational visibility.
+
+AI is supplementary in this version. The core runtime product logic (odds retrieval, ranking, filtering, caching, API responses) is deterministic application code. AI was primarily used during development to accelerate implementation and iteration.
+
+## AI Integration
+Development used AI coding assistance in Cursor to speed up architecture updates, deployment fixes, and iterative feature changes (for example, threshold tuning and hosting adjustments). The implementation did not add an end-user LLM feature to the app runtime.
+
+Patterns used in the build process:
+- Multi-step reasoning for debugging deployment/runtime path issues.
+- Tool-assisted code search and targeted edits across backend/frontend files.
+- Iterative refinement loops for product copy and threshold logic.
+
+Tradeoffs considered:
+- Cost/latency/reliability favored deterministic backend logic over an online LLM dependency in production.
+- AI-assisted coding improved speed, but correctness still required manual verification (especially env/deploy behavior and path resolution).
+
+AI exceeded expectations in rapid refactors and issue triage, and fell short when deployment platform settings required exact environment-specific configuration that still needed human confirmation.
+
+## Architecture / Design Decisions
+Backend/frontend structure:
+- `backend/`: FastAPI app, Odds API integration, ranking/filtering logic, cache layer.
+- `frontend/`: static HTML/CSS/JS client that calls backend JSON endpoints.
+
+Data flow:
+1. Frontend requests `/api/picks` or `/api/picks/game`.
+2. Backend fetches upstream odds data (or demo fallback when no key).
+3. Service computes implied probability + edge, applies thresholds/fallbacks, ranks lines.
+4. Response returns grouped games + metadata, and frontend renders league/game cards.
+
+Key design choices:
+- In-memory short-TTL cache (`picks_cache.py`) to reduce redundant API fan-out.
+- Per-request metadata (source, fallback used, warning state) for transparency.
+- API base indirection in frontend config to support split hosting (Pages + hosted API).
+
+Tradeoffs/assumptions:
+- In-memory cache is simple and fast but not shared across multiple instances.
+- Odds API quota and response volatility require graceful fallback and warning messaging.
+- Public static hosting alone is insufficient; live data requires a hosted backend with server-side API key.
+
+## What did AI help you do faster, and where did it get in your way?
+AI coding tools helped accelerate:
+- Endpoint and service refactors.
+- Deployment configuration scaffolding (Docker + host-specific setup).
+- UI copy updates and consistency changes.
+- Root-cause analysis from logs and stack traces.
+
+Limitations encountered:
+- Deployment platforms have strict/path-sensitive settings that AI suggestions still needed manual adaptation.
+- Environment variable and host wiring required careful human verification.
+- Final correctness still depended on testing real runtime behavior, not just code diffs.
+
+Using AI changed the build approach by making iteration cycles shorter: generate -> validate -> correct -> redeploy, with human review as the quality gate.
+
+## Getting Started / Setup Instructions
+```bash
+git clone <repo-url>
+cd bettor/backend
+pip install -r requirements.txt
+
+# Set up environment variables (create backend/.env manually if missing)
+# Add your key:
+# THE_ODDS_API_KEY=your_key_here
+
+uvicorn main:app --reload
+```
+
+Then open `http://localhost:8000`.
+
+## Demo
+How to use:
+1. Open the app homepage.
+2. Pick a date (today/future pickable day).
+3. Expand a league card to view games.
+4. Expand a game card to view the top ranked lines.
+5. Use **Update odds** on a game for a targeted refresh.
+6. Use **Reload slate** to refetch the full day.
+
+Useful API checks:
+- `GET /api/health` - verifies service up and whether live odds key is configured.
+- `GET /api/picks?date=YYYY-MM-DD&timezone=America/New_York`
+- `GET /api/picks/game?sport_key=baseball_mlb&event_id=<id>&date=YYYY-MM-DD&timezone=America/New_York`
+
+## Testing / Error Handling (Recommended)
+Testing approach:
+- Manual endpoint validation with different dates/timezones and league selections.
+- Verified empty-state/fallback behavior when thresholds are strict.
+- Confirmed cache hit/miss/bypass behavior via `X-Picks-Cache` response header.
+
+Error handling implemented:
+- Input validation for malformed dates and unsupported sport keys.
+- Graceful warnings when upstream Odds API partial failures/quota pressure occur.
+- Demo/live source signaling for visibility when API key is absent.
+- Deployment-safe static path handling for local and containerized environments.
+
+## Future Improvements / Stretch Goals (Optional)
+- Add automated tests for ranking, threshold/fallback rules, and API contracts.
+- Move cache to Redis for multi-instance consistency.
+- Add historical tracking and trend views by game/market.
+- Add auth/user preferences for leagues, markets, and thresholds.
+- Improve observability with structured logs and latency/error dashboards.
+
+## Link to website URL or application (Optional)
+- Website: `https://rohanjoshi.net`
