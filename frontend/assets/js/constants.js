@@ -7,7 +7,6 @@ export const browserTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
 export const LEAGUE_SORT_ORDER = [
   "basketball_nba",
   "americanfootball_nfl",
-  "baseball_mlb",
 ];
 
 export const PROP_SPORT_KEYS = new Set(LEAGUE_SORT_ORDER);

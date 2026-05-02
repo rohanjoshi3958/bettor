@@ -8,7 +8,6 @@ const ASSET = "/assets/js";
 const LEAGUE_IMAGE = {
   basketball_nba: "nba.png",
   americanfootball_nfl: "nfl.jpeg",
-  baseball_mlb: "mlb.jpeg",
   soccer_epl: "premierleague.jpeg",
   soccer_spain_la_liga: "laliga.jpeg",
   soccer_italy_serie_a: "seriea.jpeg",

@@ -57,7 +57,7 @@ export async function refreshGameData(sportKey, eventId, opts = {}) {
 }
 
 /**
- * NBA/NFL/MLB: re-fetch prop games that returned empty while siblings in the same league have picks.
+ * NBA/NFL: re-fetch prop games that returned empty while siblings in the same league have picks.
  */
 export function maybeBackfillEmptyPropGames(source, generation) {
   if (source !== "live") return;

@@ -93,7 +93,7 @@ How to use:
 Useful API checks:
 - `GET /api/health` - verifies service up and whether live odds key is configured.
 - `GET /api/picks?date=YYYY-MM-DD&timezone=America/New_York`
-- `GET /api/picks/game?sport_key=baseball_mlb&event_id=<id>&date=YYYY-MM-DD&timezone=America/New_York`
+- `GET /api/picks/game?sport_key=basketball_nba&event_id=<id>&date=YYYY-MM-DD&timezone=America/New_York`
 
 ## Testing / Error Handling 
 Testing approach:

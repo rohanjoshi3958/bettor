@@ -163,8 +163,19 @@ function createGameDetailView(game) {
   root.appendChild(actions);
   const picksWrap = document.createElement("div");
   picksWrap.className = "game-picks game-picks-detail";
-  fillPickCards(picksWrap, Array.isArray(game.picks) ? game.picks : []);
+  fillPickCards(picksWrap, Array.isArray(game.picks) ? game.picks : [], {
+    sportKey: sk,
+    eventId: eid,
+    commenceTime: game.commence_time != null ? String(game.commence_time) : "",
+  });
   root.appendChild(picksWrap);
+  if (!String(sk).startsWith("soccer_")) {
+    const chartNote = document.createElement("p");
+    chartNote.className = "line-chart-page-note";
+    chartNote.textContent =
+      "Step chart: flat stretches are unchanged odds; only changes drive the line. Charts use every snapshot (local + Odds API historical when available). If history stops early, raise BETTOR_HISTORY_MAX_STEPS on the server.";
+    root.appendChild(chartNote);
+  }
   return root;
 }
 

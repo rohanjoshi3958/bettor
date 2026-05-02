@@ -43,8 +43,8 @@
         <p>
           Live odds and schedules come from
           <a href="https://the-odds-api.com/" rel="noopener noreferrer">The Odds API</a>.
-          Soccer uses moneyline (<abbr title="head-to-head">h2h</abbr>) markets in bulk; NBA, NFL,
-          and MLB use player prop markets (and MLB home-run markets) per game, within API limits.
+          Soccer uses moneyline (<abbr title="head-to-head">h2h</abbr>) markets in bulk; NBA and NFL
+          use player prop markets per game, within API limits.
         </p>
 
         <h2 class="doc-title">Which books count</h2>
@@ -145,11 +145,10 @@
 
         <h2 class="doc-title">Minimum implied filter (and fallback)</h2>
         <p>
-          First, only lines with implied probability (from the best decimal) above a league-specific
-          floor are kept: <strong>≥ 52%</strong> for most sports, <strong>≥ 30%</strong> for
-          <strong>MLB</strong>. If that would show nothing useful for the day, the app relaxes once
-          and recomputes — non-MLB lines use <strong>≥ 50%</strong>, MLB lines
-          <strong>≥ 28%</strong>. You’ll see a banner when that fallback runs.
+          First, only lines with implied probability (from the best decimal) of
+          <strong>≥ 52%</strong> are kept. If that would show nothing useful for the day, the app
+          relaxes once and recomputes with <strong>≥ 50%</strong>. You’ll see a banner when that
+          fallback runs.
         </p>
 
         <h2 class="doc-title">Disclaimer</h2>

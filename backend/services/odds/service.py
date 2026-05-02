@@ -2,7 +2,7 @@
 Fetches odds from The Odds API (https://the-odds-api.com/).
 
 - Soccer (EU leagues): bulk /odds, moneyline (h2h) line-shopping edge.
-- NBA / NFL props, MLB HR: per-event /events/{id}/odds (player markets).
+- NBA / NFL props: per-event /events/{id}/odds (player markets).
 
 Slate rules are the same for every league: games on the requested calendar day are listed in
 kickoff order, but any game whose scheduled kickoff is already past (started or finished) is
@@ -38,11 +38,8 @@ _PROP_FETCH_CONCURRENCY = int(os.environ.get("ODDS_PROP_CONCURRENCY", "4"))
 
 # Market-implied probability = 1 / decimal_odds (naive; not de-vigged).
 # 55% was often too strict with 4 books + 2-book minimum → empty slates; 0.52 primary, 0.50 fallback.
-# MLB props are looser: 0.30 primary, 0.28 relaxed (same ~2pt step as global).
 MIN_IMPLIED_PROBABILITY = 0.52
 RELAXED_IMPLIED_PROBABILITY = 0.50
-MLB_MIN_IMPLIED_PROBABILITY = 0.30
-MLB_RELAXED_IMPLIED_PROBABILITY = 0.28
 
 # Rank = blend of high implied prob + line-shopping edge (best vs avg among your books).
 _RANK_IMPLIED_WEIGHT = 0.55
@@ -304,9 +301,6 @@ NFL_PROP_MARKETS = (
     "player_receptions,player_anytime_td"
 )
 
-MLB_HR_MARKETS = "batter_home_runs,batter_home_runs_alternate"
-
-
 def _nba_market_set() -> set[str]:
     return {m.strip() for m in NBA_PROP_MARKETS.replace("\n", "").split(",") if m.strip()}
 
@@ -315,15 +309,10 @@ def _nfl_market_set() -> set[str]:
     return {m.strip() for m in NFL_PROP_MARKETS.replace("\n", "").split(",") if m.strip()}
 
 
-def _mlb_hr_market_set() -> set[str]:
-    return {m.strip() for m in MLB_HR_MARKETS.split(",") if m.strip()}
-
-
 def _sport_titles() -> dict[str, str]:
     return {
         "basketball_nba": "NBA",
         "americanfootball_nfl": "NFL",
-        "baseball_mlb": "MLB",
         "soccer_epl": "EPL",
         "soccer_spain_la_liga": "La Liga",
         "soccer_italy_serie_a": "Serie A",
@@ -349,8 +338,6 @@ _MARKET_LABELS: dict[str, str] = {
     "player_reception_yds": "Rec Yds",
     "player_receptions": "Rec",
     "player_anytime_td": "Anytime TD",
-    "batter_home_runs": "HR",
-    "batter_home_runs_alternate": "HR (alt)",
 }
 
 
@@ -493,21 +480,6 @@ def demo_picks(for_day: date, tz_name: str) -> list[BetPick]:
             best_book="Fanatics",
             avg_decimal_odds=1.51,
             edge_pct=2.6,
-        ),
-        BetPick(
-            sport_key="baseball_mlb",
-            sport_title=titles["baseball_mlb"],
-            event_id="demo-mlb",
-            home_team="Los Angeles Dodgers",
-            away_team="San Diego Padres",
-            commence_time=_demo_commence_on_day(for_day, tz_name, 22, 10),
-            pick="HR · Mookie Betts — Under 0.5",
-            market_key="batter_home_runs",
-            implied_probability=round(implied_probability(1.68), 4),
-            best_decimal_odds=1.68,
-            best_book="DraftKings",
-            avg_decimal_odds=1.63,
-            edge_pct=3.1,
         ),
     ]
 
@@ -724,6 +696,12 @@ async def _fetch_bulk_h2h(
             return [], []
         ordered = _events_sorted_by_kickoff(events)
         picks = _h2h_events_to_picks(ordered, sport_key, sport_title)
+        try:
+            from services.odds_peaks import defer_record_h2h_slate_events
+
+            defer_record_h2h_slate_events(ordered, sport_key)
+        except Exception:
+            pass
         shells = shells_from_scheduled_events(events, sport_key, sport_title)
         return picks, shells
     except httpx.HTTPStatusError as e:
@@ -786,6 +764,12 @@ async def _fetch_event_props(
             ev = r.json()
             if not isinstance(ev, dict):
                 return []
+            try:
+                from services.odds_peaks import defer_record_prop_event
+
+                defer_record_prop_event(ev, sport_key, allowed)
+            except Exception:
+                pass
             return _prop_event_to_picks(ev, sport_key, sport_title, allowed)
         except httpx.HTTPStatusError as e:
             code = e.response.status_code if e.response is not None else 0
@@ -908,7 +892,6 @@ def supported_sport_key(sport_key: str) -> bool:
     return sport_key in SOCCER_SPORT_KEYS or sport_key in (
         "basketball_nba",
         "americanfootball_nfl",
-        "baseball_mlb",
     )
 
 
@@ -980,17 +963,6 @@ async def fetch_picks_for_event(
                 eid_norm,
                 NFL_PROP_MARKETS.replace("\n", ""),
                 _nfl_market_set(),
-                quota_events,
-            )
-        elif sport_key == "baseball_mlb":
-            picks = await _fetch_event_props(
-                client,
-                key,
-                sport_key,
-                titles["baseball_mlb"],
-                eid_norm,
-                MLB_HR_MARKETS,
-                _mlb_hr_market_set(),
                 quota_events,
             )
         else:
@@ -1109,23 +1081,11 @@ async def fetch_best_picks(
             ct,
             quota_events,
         )
-        mlb_t = _fetch_prop_sport(
-            client,
-            key,
-            "baseball_mlb",
-            titles["baseball_mlb"],
-            MLB_HR_MARKETS,
-            _mlb_hr_market_set(),
-            cf,
-            ct,
-            quota_events,
-        )
 
         gathered = await asyncio.gather(
             *soccer_tasks,
             nba_t,
             nfl_t,
-            mlb_t,
             return_exceptions=True,
         )
 
@@ -1188,16 +1148,6 @@ def picks_to_json(picks: list[BetPick]) -> list[dict[str, Any]]:
     ]
 
 
-def _implied_floor_for_pick(p: BetPick, pass_floor: float) -> float:
-    """Global primary/relaxed floors; MLB (`baseball_mlb`) uses lower thresholds only."""
-    if p.sport_key == "baseball_mlb":
-        if pass_floor == MIN_IMPLIED_PROBABILITY:
-            return MLB_MIN_IMPLIED_PROBABILITY
-        if pass_floor == RELAXED_IMPLIED_PROBABILITY:
-            return MLB_RELAXED_IMPLIED_PROBABILITY
-    return pass_floor
-
-
 def group_picks_into_games(
     picks: list[BetPick],
     picks_per_game: int = PICKS_PER_GAME,
@@ -1207,7 +1157,7 @@ def group_picks_into_games(
 ) -> list[dict[str, Any]]:
     """Group by (sport_key, event_id); keep top `picks_per_game` by rank_score per game."""
     floor = MIN_IMPLIED_PROBABILITY if min_implied is None else min_implied
-    filtered = [p for p in picks if p.implied_probability >= _implied_floor_for_pick(p, floor)]
+    filtered = [p for p in picks if p.implied_probability >= floor]
     by_game: dict[tuple[str, str], list[BetPick]] = defaultdict(list)
     for p in filtered:
         k = _merge_game_key(p.sport_key, p.event_id)

@@ -1,7 +1,9 @@
 """JSON API: health, full slate, single-game picks."""
 
+import asyncio
 from datetime import date
 
+import httpx
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import JSONResponse
 from zoneinfo import ZoneInfo
@@ -16,6 +18,11 @@ from services.odds import (
     get_api_key,
     supported_sport_key,
 )
+from services.odds_history_upstream import (
+    fetch_upstream_line_points,
+    merge_local_and_upstream,
+)
+from services.odds_peaks import fetch_line_history
 from services.picks_cache import cached_fetch, picks_cache_ttl_seconds
 
 router = APIRouter(prefix="/api", tags=["picks"])
@@ -40,6 +47,65 @@ def _cap_slate_games(games: list[dict], ppg: int) -> None:
 @router.get("/health")
 def health():
     return {"ok": True, "live_odds": bool(get_api_key())}
+
+
+@router.get("/picks/line-history")
+async def picks_line_history(
+    sport_key: str = Query(..., min_length=1),
+    event_id: str = Query(..., min_length=1),
+    pick: str = Query(..., min_length=1),
+    limit: int = Query(default=400, ge=10, le=2000),
+    market_key: str | None = Query(default=None),
+    commence_time: str | None = Query(default=None),
+    backfill: int = Query(default=1, ge=0, le=1),
+):
+    """Best decimal among allowed books over time: local snapshots + optional Odds API historical."""
+    sk = sport_key.strip()
+    eid = event_id.strip()
+    pk = pick.strip()
+    if not supported_sport_key(sk):
+        raise HTTPException(
+            status_code=400,
+            detail="Unsupported sport_key for this endpoint",
+        ) from None
+    if sk.startswith("soccer_"):
+        raise HTTPException(
+            status_code=400,
+            detail="Line history is not available for soccer",
+        ) from None
+    api_key = get_api_key()
+    if backfill == 1 and api_key and api_key.strip():
+        async with httpx.AsyncClient() as client:
+            local_task = fetch_line_history(sk, eid, pk, limit)
+            upstream_task = fetch_upstream_line_points(
+                client,
+                api_key.strip(),
+                sport_key=sk,
+                event_id=eid,
+                pick_label=pk,
+                market_key=(market_key.strip() if market_key and market_key.strip() else None),
+                commence_time=(commence_time.strip() if commence_time and commence_time.strip() else None),
+            )
+            local, (upstream, up_meta) = await asyncio.gather(local_task, upstream_task)
+        meta: dict = {"local_points": len(local), **up_meta}
+        points = merge_local_and_upstream(local, upstream) if upstream else local
+        meta["merged_points"] = len(points)
+    else:
+        local = await fetch_line_history(sk, eid, pk, limit)
+        meta = {"local_points": len(local)}
+        points = local
+
+    return JSONResponse(
+        {
+            "sport_key": sk,
+            "event_id": eid,
+            "pick": pk,
+            "points": points,
+            "count": len(points),
+            "history_meta": meta,
+        },
+        headers={"Cache-Control": "no-store, must-revalidate"},
+    )
 
 
 @router.get("/picks")
