@@ -696,12 +696,6 @@ async def _fetch_bulk_h2h(
             return [], []
         ordered = _events_sorted_by_kickoff(events)
         picks = _h2h_events_to_picks(ordered, sport_key, sport_title)
-        try:
-            from services.odds_peaks import defer_record_h2h_slate_events
-
-            defer_record_h2h_slate_events(ordered, sport_key)
-        except Exception:
-            pass
         shells = shells_from_scheduled_events(events, sport_key, sport_title)
         return picks, shells
     except httpx.HTTPStatusError as e:
@@ -764,12 +758,6 @@ async def _fetch_event_props(
             ev = r.json()
             if not isinstance(ev, dict):
                 return []
-            try:
-                from services.odds_peaks import defer_record_prop_event
-
-                defer_record_prop_event(ev, sport_key, allowed)
-            except Exception:
-                pass
             return _prop_event_to_picks(ev, sport_key, sport_title, allowed)
         except httpx.HTTPStatusError as e:
             code = e.response.status_code if e.response is not None else 0

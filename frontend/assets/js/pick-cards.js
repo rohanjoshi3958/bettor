@@ -1,10 +1,6 @@
 import { decimalToAmerican, escapeHtml, pickNum } from "./format.js";
-import { mountLineHistoryChart } from "./line-chart.js";
 
-export function fillPickCards(container, picks, gameKeys) {
-  const sportKey = gameKeys?.sportKey ?? "";
-  const eventId = gameKeys?.eventId ?? "";
-  const commenceTime = gameKeys?.commenceTime ?? "";
+export function fillPickCards(container, picks, _gameKeys) {
   container.innerHTML = "";
   if (!picks.length) {
     const p = document.createElement("p");
@@ -29,10 +25,6 @@ export function fillPickCards(container, picks, gameKeys) {
     const edgeStr =
       edge != null && Number.isFinite(Number(edge)) ? String(edge) : "—";
     const pickStr = String(p.pick ?? "");
-    const marketKey = p.market_key != null ? String(p.market_key) : "";
-    const soccerLeague = String(sportKey).startsWith("soccer_");
-    const canChart = Boolean(sportKey && eventId && pickStr && !soccerLeague);
-    const chartSummary = "Best price over time";
     card.innerHTML = `
       <div class="card-top">
         <div>
@@ -54,34 +46,7 @@ export function fillPickCards(container, picks, gameKeys) {
         <span>Edge <strong>+${escapeHtml(edgeStr)}%</strong></span>
         <span>Avg <strong>${avgStr}</strong></span>
       </div>
-      ${
-        canChart
-          ? `<details class="line-history-details">
-        <summary class="line-history-summary">${escapeHtml(chartSummary)}</summary>
-        <div class="line-history-mount" data-sport="${escapeHtml(sportKey)}" data-event="${escapeHtml(
-              eventId
-            )}" data-pick="${escapeHtml(pickStr)}"></div>
-      </details>`
-          : ""
-      }
     `;
-    if (canChart) {
-      const details = card.querySelector(".line-history-details");
-      const mount = card.querySelector(".line-history-mount");
-      if (details && mount) {
-        details.addEventListener("toggle", () => {
-          if (!details.open || mount.dataset.loaded === "1") return;
-          mount.dataset.loaded = "1";
-          mountLineHistoryChart(mount, {
-            sportKey,
-            eventId,
-            pick: pickStr,
-            marketKey,
-            commenceTime,
-          });
-        });
-      }
-    }
     container.appendChild(card);
   });
 }
