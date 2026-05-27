@@ -1,7 +1,5 @@
 .env
 .env.*
 backend/.venv/
-backend/data/*.sqlite
-backend/data/*.sqlite-*
 __pycache__/
 *.pyc

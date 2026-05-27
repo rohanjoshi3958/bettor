@@ -289,6 +289,7 @@ SOCCER_SPORT_KEYS = (
     "soccer_france_ligue",
     "soccer_uefa_champs_league",
     "soccer_uefa_europa_league",
+    "soccer_fifa_world_cup",
 )
 
 NBA_PROP_MARKETS = (
@@ -320,6 +321,7 @@ def _sport_titles() -> dict[str, str]:
         "soccer_france_ligue": "Ligue 1",
         "soccer_uefa_champs_league": "UCL",
         "soccer_uefa_europa_league": "Europa League",
+        "soccer_fifa_world_cup": "FIFA World Cup",
     }
 
 
@@ -480,6 +482,21 @@ def demo_picks(for_day: date, tz_name: str) -> list[BetPick]:
             best_book="Fanatics",
             avg_decimal_odds=1.51,
             edge_pct=2.6,
+        ),
+        BetPick(
+            sport_key="soccer_fifa_world_cup",
+            sport_title=titles["soccer_fifa_world_cup"],
+            event_id="demo-wc",
+            home_team="Brazil",
+            away_team="Germany",
+            commence_time=_demo_commence_on_day(for_day, tz_name, 14, 0),
+            pick="Brazil",
+            market_key="h2h",
+            implied_probability=round(implied_probability(1.72), 4),
+            best_decimal_odds=1.72,
+            best_book="DraftKings",
+            avg_decimal_odds=1.66,
+            edge_pct=3.1,
         ),
     ]
 
