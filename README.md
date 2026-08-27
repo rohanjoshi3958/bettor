@@ -107,10 +107,5 @@ Error handling implemented:
 - Demo/live source signaling for visibility when API key is absent.
 - Deployment-safe static path handling for local and containerized environments.
 
-## Future Improvements / Stretch Goals 
-- Add automated tests for ranking, threshold/fallback rules, and API contracts.
-- Add auth/user preferences for leagues, markets, and thresholds.
-- Expand the number of suppported sportsbooks
-
 ## Link to website URL or application 
-- Website: `https://rohanjoshi.net`
+- Website: bettor.studio
