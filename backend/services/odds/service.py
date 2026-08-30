@@ -104,15 +104,16 @@ def local_day_bounds_utc(day: date, tz_name: str) -> tuple[datetime, datetime]:
     return start_local.astimezone(timezone.utc), end_local.astimezone(timezone.utc)
 
 
-def _parse_commence(raw: str) -> datetime | None:
+def _parse_commence(raw: Any) -> datetime | None:
+    """Upstream commence_time is normally an ISO string, but treat any other shape as unknown."""
     try:
         s = raw[:-1] + "+00:00" if raw.endswith("Z") else raw
         return datetime.fromisoformat(s)
-    except (ValueError, TypeError):
+    except (AttributeError, TypeError, ValueError):
         return None
 
 
-def _commence_time_utc(raw: str) -> datetime | None:
+def _commence_time_utc(raw: Any) -> datetime | None:
     ct = _parse_commence(raw)
     if ct is None:
         return None
@@ -721,6 +722,9 @@ async def _fetch_bulk_h2h(
         return [], []
     except httpx.HTTPError:
         return [], []
+    except ValueError:
+        # Body was not JSON (proxy error page, truncated response, ...).
+        return [], []
 
 
 async def _fetch_events(
@@ -747,6 +751,8 @@ async def _fetch_events(
             _note_odds_api_quota_issue(quota_events, e.response.status_code)
         return []
     except httpx.HTTPError:
+        return []
+    except ValueError:
         return []
 
 
@@ -790,6 +796,8 @@ async def _fetch_event_props(
                 continue
             return []
         except httpx.HTTPError:
+            return []
+        except ValueError:
             return []
     return []
 
