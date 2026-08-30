@@ -96,7 +96,9 @@ Useful API checks:
 - `GET /api/picks/game?sport_key=basketball_nba&event_id=<id>&date=YYYY-MM-DD&timezone=America/New_York`
 
 ## Testing / Error Handling 
-Automated test suite (pytest):
+Automated backend test suite (pytest). Install dev dependencies once, then run tests from
+`backend/` — that directory contains `pytest.ini` (`asyncio_mode`, `pythonpath`, etc.). Running
+bare `pytest` from the repo root skips that config and async tests will fail.
 
 ```bash
 cd backend
@@ -104,10 +106,24 @@ pip install -r requirements-dev.txt
 python -m pytest
 ```
 
-Optional coverage report:
+Run a single file or test:
+
+```bash
+cd backend
+python -m pytest tests/test_cors.py
+python -m pytest tests/test_cors.py::TestGetCorsOrigins::test_returns_production_origin_when_env_is_set -v
+```
+
+Optional coverage report (also from `backend/`):
 
 ```bash
 python -m pytest --cov=app --cov=services --cov-report=term-missing
+```
+
+From the repo root, pass the backend config explicitly:
+
+```bash
+python -m pytest -c backend/pytest.ini backend/tests
 ```
 
 The suite is deterministic and CI-safe: it needs no Odds API key and makes no external network
