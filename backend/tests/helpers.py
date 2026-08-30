@@ -18,6 +18,9 @@ import httpx
 from app.core import calendar as calendar_module
 from services import picks_cache
 from services.odds import service as odds_service
+from services.odds import client as odds_client_module
+from services.odds import normalization as normalization_module
+from services.odds import demo as demo_module
 from services.odds.service import BetPick
 
 _SPORT_PATH = re.compile(r"^/v4/sports/(?P<sport>[^/]+)/(?P<tail>.*)$")
@@ -49,8 +52,9 @@ def iso_offset(
 def freeze_time(monkeypatch, now_utc: datetime, *extra_modules) -> datetime:
     """Pin `datetime.now()` inside the modules that make time-window decisions.
 
-    Both the odds service and the pickable-day calendar branch on the current time, so tests
-    that assert on slate windows or started-game exclusion must control both.
+    After the service split, datetime.now() is called from normalization, demo, and the
+    orchestration layer (service). All three are patched so that any code path that
+    branches on the current time uses the frozen instant.
     """
     if now_utc.tzinfo is None:
         now_utc = now_utc.replace(tzinfo=timezone.utc)
@@ -62,7 +66,7 @@ def freeze_time(monkeypatch, now_utc: datetime, *extra_modules) -> datetime:
                 return now_utc.astimezone(timezone.utc).replace(tzinfo=None)
             return now_utc.astimezone(tz)
 
-    for module in (odds_service, calendar_module, *extra_modules):
+    for module in (odds_service, normalization_module, demo_module, calendar_module, *extra_modules):
         monkeypatch.setattr(module, "datetime", FrozenDatetime)
     return now_utc
 
@@ -315,7 +319,11 @@ def install_fake_odds_api(monkeypatch, api: FakeOddsAPI) -> FakeOddsAPI:
         kwargs.pop("transport", None)
         return httpx.AsyncClient(*args, transport=httpx.MockTransport(api.handler), **kwargs)
 
-    monkeypatch.setattr(odds_service, "httpx", _HttpxProxy(factory))
+    proxy = _HttpxProxy(factory)
+    # Patch both the orchestration layer (creates AsyncClient) and the client module
+    # (uses httpx exception classes in except clauses).
+    monkeypatch.setattr(odds_service, "httpx", proxy)
+    monkeypatch.setattr(odds_client_module, "httpx", proxy)
     return api
 
 
@@ -337,7 +345,8 @@ def install_instant_sleep(monkeypatch) -> list[float]:
         recorded.append(delay)
         return await real_sleep(0)
 
-    monkeypatch.setattr(odds_service, "asyncio", _AsyncioProxy(sleep))
+    # asyncio.sleep is called in the client module (prop retry backoff).
+    monkeypatch.setattr(odds_client_module, "asyncio", _AsyncioProxy(sleep))
     return recorded
 
 

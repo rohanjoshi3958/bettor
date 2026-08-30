@@ -42,6 +42,40 @@ Data flow:
 3. Service computes implied probability + edge, applies thresholds/fallbacks, ranks lines.
 4. Response returns grouped games + metadata, and frontend renders league/game cards.
 
+### Odds service module structure
+
+The odds service (`backend/services/odds/`) is split into focused modules. Each layer only imports from layers below it; there are no upward or cross-layer dependencies.
+
+```
+API layer  (app/api/picks.py)
+    │
+    ▼
+service.py          ← orchestration: demo vs live branching, client fan-out, response assembly
+    │               also re-exports all public symbols for backward compatibility
+    ├── client.py           ← HTTP requests to The Odds API, quota tracking, retry, warnings
+    │       ├── parser.py           ← convert raw API payloads into BetPick domain objects
+    │       │       ├── normalization.py    ← event-ID normalise, time utils, shell/merge helpers
+    │       │       │       └── models.py   ← BetPick dataclass, shared constants
+    │       │       └── sports.py           ← sport keys, markets, display titles, get_api_key
+    │       └── normalization.py
+    ├── ranking.py          ← rank_score, group_picks_into_games, picks_to_json, implied-prob fallback
+    │       └── normalization.py
+    ├── demo.py             ← static fallback picks (no HTTP)
+    │       ├── normalization.py
+    │       └── sports.py
+    └── normalization.py
+```
+
+Dependency rules enforced by `tests/test_module_boundaries.py`:
+- **models** — no internal imports; pure data (dataclass + constants)
+- **sports** — no internal imports; sport/provider config + env-key resolution only
+- **normalization** — imports `models` only; no HTTP, no ranking
+- **parser** — imports `models`, `normalization`, `sports`; no HTTP
+- **ranking** — imports `models`, `normalization`; no HTTP, no parser
+- **demo** — imports `models`, `normalization`, `sports`; no HTTP
+- **client** — imports `models`, `normalization`, `parser`; no ranking, no demo
+- **service** — imports all of the above; owns orchestration and public re-exports
+
 Key design choices:
 - In-memory short-TTL cache (`picks_cache.py`) to reduce redundant API fan-out.
 - Per-request metadata (source, fallback used, warning state) for transparency.
@@ -143,6 +177,7 @@ Coverage by area (`backend/tests/`):
 - `test_fetch_slate.py` / `test_fetch_event.py` - demo/live source selection, partial-failure degradation, warning propagation.
 - `test_api_picks.py` - `/api/health`, `/api/picks`, `/api/picks/game`: response envelopes, validation errors, cache headers, concurrent-request de-duplication.
 - `test_suite_guardrails.py` - proves the suite itself cannot use a real key or real network.
+- `test_module_boundaries.py` - verifies the odds service module split: each layer's isolation, dependency graph (no upward/cross-layer imports), and that every public symbol is re-exported from `service.py`.
 
 Manual checks still used alongside the suite:
 - Endpoint validation with different dates/timezones and league selections.
