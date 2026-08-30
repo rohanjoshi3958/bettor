@@ -2,11 +2,12 @@
 
 from datetime import date
 
-from fastapi import APIRouter, HTTPException, Query
-from fastapi.responses import JSONResponse
+from fastapi import APIRouter, HTTPException, Query, Response
+
 from zoneinfo import ZoneInfo
 
 from app.core.calendar import default_pickable_game_day, enforce_pickable_game_day
+from app.models import GameModel, HealthResponse, PicksGameResponse, PicksSlateResponse
 from services.odds import (
     MIN_IMPLIED_PROBABILITY,
     PICKS_PER_GAME,
@@ -37,17 +38,18 @@ def _cap_slate_games(games: list[dict], ppg: int) -> None:
             g["picks"] = picks[:ppg]
 
 
-@router.get("/health")
+@router.get("/health", response_model=HealthResponse)
 def health():
-    return {"ok": True, "live_odds": bool(get_api_key())}
+    return HealthResponse(ok=True, live_odds=bool(get_api_key()))
 
 
-@router.get("/picks")
+@router.get("/picks", response_model=PicksSlateResponse)
 async def picks(
     picks_per_game: int = Query(default=PICKS_PER_GAME, ge=1, le=25),
     max_games: int | None = Query(default=None),
     game_date: str | None = Query(default=None, alias="date"),
     tz_name: str = Query(default="America/New_York", alias="timezone"),
+    response: Response = None,
 ):
     try:
         z = ZoneInfo(tz_name)
@@ -96,35 +98,34 @@ async def picks(
         if cache_hit
         else ("bypass" if picks_cache_ttl_seconds() <= 0 else "miss")
     )
-    return JSONResponse(
-        {
-            "source": source,
-            "game_count": len(rows),
-            "pick_count": pick_count,
-            "picks_per_game": picks_per_game,
-            "game_date": for_day.isoformat(),
-            "timezone": tz_name,
-            "min_implied_probability": min_implied_used,
-            "target_implied_probability": MIN_IMPLIED_PROBABILITY,
-            "relaxed_implied_probability": RELAXED_IMPLIED_PROBABILITY,
-            "used_relaxed_implied_fallback": used_relaxed_fallback,
-            "odds_api_warning": odds_api_warning,
-            "games": rows,
-        },
-        headers={
-            "Cache-Control": "no-store, must-revalidate",
-            "X-Picks-Cache": cache_hdr,
-        },
+
+    response.headers["Cache-Control"] = "no-store, must-revalidate"
+    response.headers["X-Picks-Cache"] = cache_hdr
+
+    return PicksSlateResponse(
+        source=source,
+        game_count=len(rows),
+        pick_count=pick_count,
+        picks_per_game=picks_per_game,
+        game_date=for_day.isoformat(),
+        timezone=tz_name,
+        min_implied_probability=min_implied_used,
+        target_implied_probability=MIN_IMPLIED_PROBABILITY,
+        relaxed_implied_probability=RELAXED_IMPLIED_PROBABILITY,
+        used_relaxed_implied_fallback=used_relaxed_fallback,
+        odds_api_warning=odds_api_warning,
+        games=rows,
     )
 
 
-@router.get("/picks/game")
+@router.get("/picks/game", response_model=PicksGameResponse)
 async def picks_one_game(
     sport_key: str = Query(..., min_length=1),
     event_id: str = Query(..., min_length=1),
     picks_per_game: int = Query(default=PICKS_PER_GAME, ge=1, le=25),
     game_date: str | None = Query(default=None, alias="date"),
     tz_name: str = Query(default="America/New_York", alias="timezone"),
+    response: Response = None,
 ):
     if not supported_sport_key(sport_key):
         raise HTTPException(
@@ -178,22 +179,20 @@ async def picks_one_game(
         if cache_hit
         else ("bypass" if picks_cache_ttl_seconds() <= 0 else "miss")
     )
-    return JSONResponse(
-        {
-            "source": source,
-            "game": game,
-            "pick_count": pick_count,
-            "picks_per_game": picks_per_game,
-            "game_date": for_day.isoformat(),
-            "timezone": tz_name,
-            "min_implied_probability": min_implied_used,
-            "target_implied_probability": MIN_IMPLIED_PROBABILITY,
-            "relaxed_implied_probability": RELAXED_IMPLIED_PROBABILITY,
-            "used_relaxed_implied_fallback": used_relaxed_fallback,
-            "odds_api_warning": odds_api_warning,
-        },
-        headers={
-            "Cache-Control": "no-store, must-revalidate",
-            "X-Picks-Cache": cache_hdr,
-        },
+
+    response.headers["Cache-Control"] = "no-store, must-revalidate"
+    response.headers["X-Picks-Cache"] = cache_hdr
+
+    return PicksGameResponse(
+        source=source,
+        game=GameModel(**game) if game is not None else None,
+        pick_count=pick_count,
+        picks_per_game=picks_per_game,
+        game_date=for_day.isoformat(),
+        timezone=tz_name,
+        min_implied_probability=min_implied_used,
+        target_implied_probability=MIN_IMPLIED_PROBABILITY,
+        relaxed_implied_probability=RELAXED_IMPLIED_PROBABILITY,
+        used_relaxed_implied_fallback=used_relaxed_fallback,
+        odds_api_warning=odds_api_warning,
     )
