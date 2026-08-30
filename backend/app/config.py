@@ -28,7 +28,7 @@ def get_cors_origins() -> list[str]:
     In production, set the ``CORS_ALLOWED_ORIGINS`` environment variable to a
     comma-separated list of approved frontend origins, e.g.::
 
-        CORS_ALLOWED_ORIGINS=https://rohanjoshi.net
+        CORS_ALLOWED_ORIGINS=https://bettor.studio,https://www.bettor.studio
 
     When the variable is unset (local development), a set of common localhost
     origins is used so the dev server works without any manual configuration.

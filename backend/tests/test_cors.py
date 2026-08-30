@@ -13,7 +13,8 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.testclient import TestClient
 
-PRODUCTION_ORIGIN = "https://rohanjoshi.net"
+PRODUCTION_ORIGIN = "https://bettor.studio"
+PRODUCTION_ORIGIN_WWW = "https://www.bettor.studio"
 LOCAL_ORIGIN_8000 = "http://localhost:8000"
 LOCAL_ORIGIN_3000 = "http://localhost:3000"
 LOCAL_ORIGIN_5173 = "http://localhost:5173"
@@ -64,11 +65,13 @@ class TestGetCorsOrigins:
         assert get_cors_origins() == [PRODUCTION_ORIGIN]
 
     def test_supports_multiple_comma_separated_origins(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        extra = "https://www.rohanjoshi.net"
-        monkeypatch.setenv("CORS_ALLOWED_ORIGINS", f"{PRODUCTION_ORIGIN},{extra}")
+        monkeypatch.setenv(
+            "CORS_ALLOWED_ORIGINS",
+            f"{PRODUCTION_ORIGIN},{PRODUCTION_ORIGIN_WWW}",
+        )
         from app.config import get_cors_origins
 
-        assert get_cors_origins() == [PRODUCTION_ORIGIN, extra]
+        assert get_cors_origins() == [PRODUCTION_ORIGIN, PRODUCTION_ORIGIN_WWW]
 
     def test_trims_whitespace_around_entries(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("CORS_ALLOWED_ORIGINS", f"  {PRODUCTION_ORIGIN}  ,  {LOCAL_ORIGIN_8000}  ")
@@ -125,9 +128,11 @@ class TestCORSProductionAllowlist:
         assert acao != "*"
 
     def test_each_of_multiple_production_origins_is_reflected(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        www = "https://www.rohanjoshi.net"
-        client = _make_cors_client(monkeypatch, cors_env=f"{PRODUCTION_ORIGIN},{www}")
-        for origin in [PRODUCTION_ORIGIN, www]:
+        client = _make_cors_client(
+            monkeypatch,
+            cors_env=f"{PRODUCTION_ORIGIN},{PRODUCTION_ORIGIN_WWW}",
+        )
+        for origin in [PRODUCTION_ORIGIN, PRODUCTION_ORIGIN_WWW]:
             resp = client.get("/probe", headers={"Origin": origin})
             assert resp.headers.get("access-control-allow-origin") == origin
 
