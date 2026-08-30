@@ -96,10 +96,42 @@ Useful API checks:
 - `GET /api/picks/game?sport_key=basketball_nba&event_id=<id>&date=YYYY-MM-DD&timezone=America/New_York`
 
 ## Testing / Error Handling 
-Testing approach:
-- Manual endpoint validation with different dates/timezones and league selections.
-- Verified empty-state/fallback behavior when thresholds are strict.
-- Confirmed cache hit/miss/bypass behavior via `X-Picks-Cache` response header.
+Automated test suite (pytest):
+
+```bash
+cd backend
+pip install -r requirements-dev.txt
+python -m pytest
+```
+
+Optional coverage report:
+
+```bash
+python -m pytest --cov=app --cov=services --cov-report=term-missing
+```
+
+The suite is deterministic and CI-safe: it needs no Odds API key and makes no external network
+calls. The Odds API is mocked at the HTTP boundary (`httpx.MockTransport`), the current time is
+pinned for any test that depends on slate windows, and an autouse fixture fails any test that
+tries to reach the internet. It runs on every push and pull request via
+`.github/workflows/backend-tests.yml`.
+
+Coverage by area (`backend/tests/`):
+- `test_normalization.py` - event-id normalization, implied probability, timestamp parsing, prop labels, API-key resolution.
+- `test_ranking.py` - rank score blend, per-game top-N selection, implied-probability floor and its relaxed fallback, JSON contract.
+- `test_price_collection.py` - bookmaker allowlist, line shopping/edge math, malformed bookmaker payloads.
+- `test_grouping.py` - schedule shells, merging picks onto scheduled games, kickoff ordering, started-game exclusion.
+- `test_time_windows.py` - local day bounds (including DST transitions), timezone-dependent slate filtering, pickable-day window.
+- `test_picks_cache.py` - hit/miss, TTL expiry and bypass, copy-on-read isolation, warning results not cached, per-key locking under concurrent requests.
+- `test_odds_upstream.py` - upstream request shape, 429/402/5xx handling, retry behavior, undecodable bodies, prop fan-out caps.
+- `test_fetch_slate.py` / `test_fetch_event.py` - demo/live source selection, partial-failure degradation, warning propagation.
+- `test_api_picks.py` - `/api/health`, `/api/picks`, `/api/picks/game`: response envelopes, validation errors, cache headers, concurrent-request de-duplication.
+- `test_suite_guardrails.py` - proves the suite itself cannot use a real key or real network.
+
+Manual checks still used alongside the suite:
+- Endpoint validation with different dates/timezones and league selections.
+- Empty-state/fallback behavior when thresholds are strict.
+- Cache hit/miss/bypass behavior via the `X-Picks-Cache` response header.
 
 Error handling implemented:
 - Input validation for malformed dates and unsupported sport keys.
