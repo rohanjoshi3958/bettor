@@ -4,3 +4,7 @@
 *.pyc
 .env
 **/.env
+**/.pytest_cache
+backend/tests
+backend/pytest.ini
+backend/requirements-dev.txt
