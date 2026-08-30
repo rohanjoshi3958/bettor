@@ -3,7 +3,11 @@
 Covers:
 - Representative NBA, NFL, and soccer pick/game shapes.
 - Optional fields (market_key=None, odds_api_warning=None, game=None).
-- Validation errors for missing required fields and bad types.
+- Validation errors for missing required fields and bad types (including envelope
+  models, nested picks, and non-list ``picks``).
+- Envelope edge cases: extra unknown fields (ignored), empty strings, wrong list
+  element types, and HTTP 500 when the service returns data that fails
+  ``response_model`` validation.
 - Round-trip: service dicts produced by ``picks_to_json`` / ``group_picks_into_games``
   validate cleanly through the public models.
 - HTTP integration: endpoint responses match the declared response_model schema.
@@ -14,7 +18,10 @@ from __future__ import annotations
 from datetime import datetime, timezone
 
 import pytest
+from fastapi.testclient import TestClient
 from pydantic import ValidationError
+
+from app.main import app as fastapi_app
 
 from app.models import (
     GameModel,
@@ -199,6 +206,14 @@ class TestPickModel:
         }
         assert set(dumped) == expected
 
+    def test_empty_pick_string_is_accepted(self):
+        m = PickModel(**_nba_pick_dict(pick=""))
+        assert m.pick == ""
+
+    def test_extra_unknown_fields_are_ignored(self):
+        m = PickModel(**_nba_pick_dict(unexpected_field="surprise"))
+        assert "unexpected_field" not in m.model_dump()
+
 
 # ---------------------------------------------------------------------------
 # GameModel
@@ -235,6 +250,15 @@ class TestGameModel:
             "commence_time", "matchup", "picks",
         }
 
+    def test_picks_not_a_list_raises_validation_error(self):
+        d = _nba_game_dict(picks="not-a-list")
+        with pytest.raises(ValidationError):
+            GameModel(**d)
+
+    def test_malformed_nested_pick_raises_validation_error(self):
+        d = _nba_game_dict(picks=[{"sport_key": "basketball_nba"}])
+        with pytest.raises(ValidationError):
+            GameModel(**d)
 
 # ---------------------------------------------------------------------------
 # PicksSlateResponse
@@ -320,6 +344,48 @@ class TestPicksSlateResponse:
         with pytest.raises(ValidationError):
             PicksSlateResponse(**d)
 
+    def test_wrong_type_for_pick_count_raises_validation_error(self):
+        with pytest.raises(ValidationError):
+            PicksSlateResponse(**_meta_dict(pick_count="abc"), game_count=0, games=[])
+
+    def test_wrong_type_for_used_relaxed_implied_fallback_raises_validation_error(self):
+        with pytest.raises(ValidationError):
+            PicksSlateResponse(
+                **_meta_dict(used_relaxed_implied_fallback={"broken": True}),
+                game_count=0,
+                games=[],
+            )
+
+    def test_used_relaxed_implied_fallback_yes_string_is_coerced_to_true(self):
+        m = PicksSlateResponse(
+            **_meta_dict(used_relaxed_implied_fallback="yes"),
+            game_count=0,
+            games=[],
+        )
+        assert m.used_relaxed_implied_fallback is True
+
+    def test_extra_unknown_fields_are_ignored(self):
+        m = PicksSlateResponse(
+            **_meta_dict(),
+            game_count=0,
+            games=[],
+            unexpected_field="surprise",
+        )
+        assert "unexpected_field" not in m.model_dump()
+
+    def test_empty_source_string_is_accepted(self):
+        m = PicksSlateResponse(**_meta_dict(source=""), game_count=0, games=[])
+        assert m.source == ""
+
+    def test_games_not_a_list_raises_validation_error(self):
+        with pytest.raises(ValidationError):
+            PicksSlateResponse(**_meta_dict(), game_count=1, games="not-a-list")
+
+    @pytest.mark.parametrize("bad_element", ["not-a-game", 42, None])
+    def test_games_with_wrong_element_type_raises_validation_error(self, bad_element):
+        with pytest.raises(ValidationError):
+            PicksSlateResponse(**_meta_dict(), game_count=1, games=[bad_element])
+
 
 # ---------------------------------------------------------------------------
 # PicksGameResponse
@@ -358,6 +424,46 @@ class TestPicksGameResponse:
         assert len(m.game.picks) == 1
         assert isinstance(m.game.picks[0], PickModel)
 
+    def test_missing_source_raises_validation_error(self):
+        d = {**_meta_dict(), "game": None}
+        del d["source"]
+        with pytest.raises(ValidationError):
+            PicksGameResponse(**d)
+
+    def test_wrong_type_for_pick_count_raises_validation_error(self):
+        with pytest.raises(ValidationError):
+            PicksGameResponse(**_meta_dict(pick_count="three"), game=None)
+
+    def test_game_not_an_object_raises_validation_error(self):
+        with pytest.raises(ValidationError):
+            PicksGameResponse(**_meta_dict(pick_count=0), game="not-a-game")
+
+    def test_picks_not_a_list_in_game_raises_validation_error(self):
+        game = _nba_game_dict(picks="not-a-list")
+        with pytest.raises(ValidationError):
+            PicksGameResponse(**_meta_dict(pick_count=0), game=game)
+
+    def test_malformed_nested_pick_in_game_raises_validation_error(self):
+        game = _nba_game_dict(picks=[{"sport_key": "basketball_nba"}])
+        with pytest.raises(ValidationError):
+            PicksGameResponse(**_meta_dict(pick_count=1), game=game)
+
+    def test_wrong_type_for_used_relaxed_implied_fallback_raises_validation_error(self):
+        with pytest.raises(ValidationError):
+            PicksGameResponse(**_meta_dict(used_relaxed_implied_fallback={"broken": True}), game=None)
+
+    def test_used_relaxed_implied_fallback_yes_string_is_coerced_to_true(self):
+        m = PicksGameResponse(**_meta_dict(used_relaxed_implied_fallback="yes"), game=None)
+        assert m.used_relaxed_implied_fallback is True
+
+    def test_extra_unknown_fields_are_ignored(self):
+        m = PicksGameResponse(**_meta_dict(pick_count=0), game=None, unexpected_field="surprise")
+        assert "unexpected_field" not in m.model_dump()
+
+    def test_empty_source_string_is_accepted(self):
+        m = PicksGameResponse(**_meta_dict(source=""), game=None)
+        assert m.source == ""
+
 
 # ---------------------------------------------------------------------------
 # HealthResponse
@@ -373,6 +479,22 @@ class TestHealthResponse:
     def test_live_mode(self):
         m = HealthResponse(ok=True, live_odds=True)
         assert m.live_odds is True
+
+    def test_missing_ok_raises_validation_error(self):
+        with pytest.raises(ValidationError):
+            HealthResponse(live_odds=True)
+
+    def test_missing_live_odds_raises_validation_error(self):
+        with pytest.raises(ValidationError):
+            HealthResponse(ok=True)
+
+    def test_wrong_type_for_ok_raises_validation_error(self):
+        with pytest.raises(ValidationError):
+            HealthResponse(ok={"broken": True}, live_odds=False)
+
+    def test_wrong_type_for_live_odds_raises_validation_error(self):
+        with pytest.raises(ValidationError):
+            HealthResponse(ok=True, live_odds=[1, 2, 3])
 
 
 # ---------------------------------------------------------------------------
@@ -583,3 +705,70 @@ class TestResponseModelIntegration:
     @pytest.fixture
     def frozen(self, monkeypatch):
         return freeze_time(monkeypatch, NOW)
+
+
+# ---------------------------------------------------------------------------
+# HTTP integration: bad service payloads fail response validation (500)
+# ---------------------------------------------------------------------------
+
+
+class TestBadServicePayloadHttpResponses:
+    """When the odds layer returns shapes the public models reject, FastAPI responds 500."""
+
+    @pytest.fixture
+    def frozen(self, monkeypatch):
+        return freeze_time(monkeypatch, NOW)
+
+    def test_slate_with_malformed_game_dict_returns_500(self, monkeypatch, frozen):
+        async def bad_slate(*_args, **_kwargs):
+            bad_game = {"sport_key": "basketball_nba", "picks": "not-a-list"}
+            return ([bad_game], "demo", MIN_IMPLIED_PROBABILITY, False, None)
+
+        monkeypatch.setattr("app.api.picks.fetch_best_picks", bad_slate)
+        with TestClient(fastapi_app, raise_server_exceptions=False) as client:
+            response = client.get("/api/picks", params={"date": TODAY, "timezone": TZ})
+        assert response.status_code == 500
+
+    def test_slate_with_non_numeric_min_implied_returns_500(self, monkeypatch, frozen):
+        async def bad_slate(*_args, **_kwargs):
+            return ([], "demo", "not-a-float", False, None)
+
+        monkeypatch.setattr("app.api.picks.fetch_best_picks", bad_slate)
+        with TestClient(fastapi_app, raise_server_exceptions=False) as client:
+            response = client.get("/api/picks", params={"date": TODAY, "timezone": TZ})
+        assert response.status_code == 500
+
+    def test_single_game_with_malformed_game_dict_returns_500(self, monkeypatch, frozen):
+        async def bad_game(*_args, **_kwargs):
+            bad_game = {"sport_key": "basketball_nba", "picks": "not-a-list"}
+            return (bad_game, "demo", MIN_IMPLIED_PROBABILITY, False, None)
+
+        monkeypatch.setattr("app.api.picks.fetch_picks_for_event", bad_game)
+        with TestClient(fastapi_app, raise_server_exceptions=False) as client:
+            response = client.get(
+                "/api/picks/game",
+                params={
+                    "sport_key": "basketball_nba",
+                    "event_id": "demo-nba",
+                    "date": TODAY,
+                    "timezone": TZ,
+                },
+            )
+        assert response.status_code == 500
+
+    def test_single_game_with_non_numeric_min_implied_returns_500(self, monkeypatch, frozen):
+        async def bad_game(*_args, **_kwargs):
+            return (None, "demo", "not-a-float", False, None)
+
+        monkeypatch.setattr("app.api.picks.fetch_picks_for_event", bad_game)
+        with TestClient(fastapi_app, raise_server_exceptions=False) as client:
+            response = client.get(
+                "/api/picks/game",
+                params={
+                    "sport_key": "basketball_nba",
+                    "event_id": "demo-nba",
+                    "date": TODAY,
+                    "timezone": TZ,
+                },
+            )
+        assert response.status_code == 500
