@@ -11,6 +11,7 @@ All symbols that were previously defined here are re-exported below so existing 
 from __future__ import annotations
 
 import asyncio
+import logging
 from datetime import date, datetime, timedelta
 from typing import Any
 
@@ -90,6 +91,8 @@ from services.odds.sports import (  # noqa: F401
     supported_sport_key,
 )
 
+logger = logging.getLogger("bettor.odds.service")
+
 # ---------------------------------------------------------------------------
 # Orchestration
 # ---------------------------------------------------------------------------
@@ -125,7 +128,29 @@ async def fetch_picks_for_event(
         if games:
             g0 = games[0]
             if _kickoff_still_upcoming(g0):
+                logger.info(
+                    "fetch_picks_for_event_completed",
+                    extra={
+                        "source": "demo",
+                        "sport_key": sport_key,
+                        "event_id": eid_norm,
+                        "game_date": for_day.isoformat(),
+                        "pick_count": len(g0.get("picks") or []),
+                        "used_relaxed_fallback": relaxed,
+                    },
+                )
                 return g0, "demo", mi_used, relaxed, None
+        logger.info(
+            "fetch_picks_for_event_completed",
+            extra={
+                "source": "demo",
+                "sport_key": sport_key,
+                "event_id": eid_norm,
+                "game_date": for_day.isoformat(),
+                "pick_count": 0,
+                "used_relaxed_fallback": relaxed,
+            },
+        )
         return None, "demo", mi_used, relaxed, None
 
     key = api_key.strip()
@@ -173,16 +198,33 @@ async def fetch_picks_for_event(
     )
     has_picks = any(len(g.get("picks") or []) > 0 for g in games)
     warn = _odds_api_warning_message(quota_events, has_usable_response=has_picks)
+
+    def _complete(game: dict[str, Any] | None) -> tuple[dict[str, Any] | None, str, float, bool, str | None]:
+        logger.info(
+            "fetch_picks_for_event_completed",
+            extra={
+                "source": "live",
+                "sport_key": sport_key,
+                "event_id": eid_norm,
+                "game_date": for_day.isoformat(),
+                "pick_count": len((game or {}).get("picks") or []),
+                "used_relaxed_fallback": relaxed,
+                "has_odds_api_warning": bool(warn),
+                "quota_events": list(dict.fromkeys(quota_events)),
+            },
+        )
+        return game, "live", mi_used, relaxed, warn
+
     for g in games:
         if _normalize_event_id(g.get("event_id")) == eid_norm:
             if _kickoff_still_upcoming(g):
-                return g, "live", mi_used, relaxed, warn
-            return None, "live", mi_used, relaxed, warn
+                return _complete(g)
+            return _complete(None)
     if games:
         g0 = games[0]
         if _kickoff_still_upcoming(g0):
-            return g0, "live", mi_used, relaxed, warn
-    return None, "live", mi_used, relaxed, warn
+            return _complete(g0)
+    return _complete(None)
 
 
 async def fetch_best_picks(
@@ -208,6 +250,17 @@ async def fetch_best_picks(
         shells = _shells_from_bet_picks(demo)
         merged = _merge_scheduled_with_picks(shells, games, max_games=max_games)
         merged = _exclude_past_kickoff_games(merged)
+        logger.info(
+            "fetch_best_picks_completed",
+            extra={
+                "source": "demo",
+                "game_date": for_day.isoformat(),
+                "timezone": timezone_name,
+                "game_count": len(merged),
+                "pick_count": sum(len(g.get("picks") or []) for g in merged),
+                "used_relaxed_fallback": relaxed,
+            },
+        )
         return merged, "demo", mi_used, relaxed, None
 
     key = api_key.strip()
@@ -256,8 +309,14 @@ async def fetch_best_picks(
 
         batch: list[BetPick] = []
         shell_batch: list[dict[str, Any]] = []
+        gather_errors = 0
         for res in gathered:
             if isinstance(res, BaseException):
+                gather_errors += 1
+                logger.warning(
+                    "odds_sport_fanout_error",
+                    extra={"error_type": type(res).__name__, "error": str(res)[:200]},
+                )
                 continue
             picks_part, shells_part = res
             batch.extend(picks_part)
@@ -285,6 +344,20 @@ async def fetch_best_picks(
     warn = _odds_api_warning_message(
         quota_events,
         has_usable_response=len(merged) > 0,
+    )
+    logger.info(
+        "fetch_best_picks_completed",
+        extra={
+            "source": "live",
+            "game_date": for_day.isoformat(),
+            "timezone": timezone_name,
+            "game_count": len(merged),
+            "pick_count": sum(len(g.get("picks") or []) for g in merged),
+            "used_relaxed_fallback": relaxed,
+            "has_odds_api_warning": bool(warn),
+            "quota_events": list(dict.fromkeys(quota_events)),
+            "fanout_errors": gather_errors,
+        },
     )
     return merged, "live", mi_used, relaxed, warn
 

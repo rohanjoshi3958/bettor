@@ -7,6 +7,7 @@ Set PICKS_CACHE_TTL_SECONDS (default 90). Use 0 to disable.
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
 import time
 from collections.abc import Awaitable, Callable
@@ -14,6 +15,7 @@ from copy import deepcopy
 from typing import Any, TypeVar
 
 T = TypeVar("T")
+logger = logging.getLogger("bettor.cache")
 
 # fetch_best_picks / fetch_picks_for_event return a tuple whose last element is odds_api_warning.
 def _odds_warning_on_result(result: Any) -> str | None:
@@ -60,6 +62,7 @@ async def cached_fetch(
     """
     ttl = picks_cache_ttl_seconds()
     if ttl <= 0:
+        logger.info("picks_cache_bypass", extra={"cache_key": cache_key, "ttl_seconds": ttl})
         return await factory(), False
 
     lock = await _lock_for(cache_key)
@@ -69,9 +72,16 @@ async def cached_fetch(
         if cache_key in _cache:
             exp, val = _cache[cache_key]
             if exp > now:
+                logger.info("picks_cache_hit", extra={"cache_key": cache_key})
                 return deepcopy(val), True
 
         fresh = await factory()
         if _odds_warning_on_result(fresh) is None:
             _cache[cache_key] = (now + ttl, fresh)
+            logger.info("picks_cache_miss", extra={"cache_key": cache_key, "stored": True})
+        else:
+            logger.info(
+                "picks_cache_miss",
+                extra={"cache_key": cache_key, "stored": False, "reason": "odds_api_warning"},
+            )
         return deepcopy(fresh), False

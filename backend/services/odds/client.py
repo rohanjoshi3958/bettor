@@ -14,6 +14,7 @@ remain independently testable without creating their own client context.
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
 from typing import Any
 
@@ -27,6 +28,8 @@ from services.odds.normalization import (
     shells_from_scheduled_events,
 )
 from services.odds.parser import _h2h_events_to_picks, _prop_event_to_picks
+
+logger = logging.getLogger("bettor.odds.client")
 
 ODDS_BASE = "https://api.the-odds-api.com/v4"
 
@@ -122,13 +125,26 @@ async def _fetch_bulk_h2h(
         shells = shells_from_scheduled_events(events, sport_key, sport_title)
         return picks, shells
     except httpx.HTTPStatusError as e:
+        status = e.response.status_code if e.response is not None else 0
         if e.response is not None:
-            _note_odds_api_quota_issue(quota_events, e.response.status_code)
+            _note_odds_api_quota_issue(quota_events, status)
+        logger.warning(
+            "odds_upstream_http_error",
+            extra={"endpoint": "bulk_h2h", "sport_key": sport_key, "status_code": status},
+        )
         return [], []
-    except httpx.HTTPError:
+    except httpx.HTTPError as e:
+        logger.warning(
+            "odds_upstream_transport_error",
+            extra={"endpoint": "bulk_h2h", "sport_key": sport_key, "error_type": type(e).__name__},
+        )
         return [], []
     except ValueError:
         # Body was not JSON (proxy error page, truncated response, ...).
+        logger.warning(
+            "odds_upstream_invalid_json",
+            extra={"endpoint": "bulk_h2h", "sport_key": sport_key},
+        )
         return [], []
 
 
@@ -152,12 +168,25 @@ async def _fetch_events(
         data = r.json()
         return data if isinstance(data, list) else []
     except httpx.HTTPStatusError as e:
+        status = e.response.status_code if e.response is not None else 0
         if e.response is not None:
-            _note_odds_api_quota_issue(quota_events, e.response.status_code)
+            _note_odds_api_quota_issue(quota_events, status)
+        logger.warning(
+            "odds_upstream_http_error",
+            extra={"endpoint": "events", "sport_key": sport_key, "status_code": status},
+        )
         return []
-    except httpx.HTTPError:
+    except httpx.HTTPError as e:
+        logger.warning(
+            "odds_upstream_transport_error",
+            extra={"endpoint": "events", "sport_key": sport_key, "error_type": type(e).__name__},
+        )
         return []
     except ValueError:
+        logger.warning(
+            "odds_upstream_invalid_json",
+            extra={"endpoint": "events", "sport_key": sport_key},
+        )
         return []
 
 
@@ -194,15 +223,40 @@ async def _fetch_event_props(
             if attempt == 0 and code == 429:
                 await asyncio.sleep(1.2)
                 continue
+            logger.warning(
+                "odds_upstream_http_error",
+                extra={
+                    "endpoint": "event_props",
+                    "sport_key": sport_key,
+                    "status_code": code,
+                    "attempt": attempt + 1,
+                },
+            )
             return []
         except httpx.TimeoutException:
             if attempt == 0:
                 await asyncio.sleep(0.6)
                 continue
+            logger.warning(
+                "odds_upstream_timeout",
+                extra={"endpoint": "event_props", "sport_key": sport_key, "attempt": attempt + 1},
+            )
             return []
-        except httpx.HTTPError:
+        except httpx.HTTPError as e:
+            logger.warning(
+                "odds_upstream_transport_error",
+                extra={
+                    "endpoint": "event_props",
+                    "sport_key": sport_key,
+                    "error_type": type(e).__name__,
+                },
+            )
             return []
         except ValueError:
+            logger.warning(
+                "odds_upstream_invalid_json",
+                extra={"endpoint": "event_props", "sport_key": sport_key},
+            )
             return []
     return []
 

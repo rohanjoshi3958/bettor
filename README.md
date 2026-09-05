@@ -110,11 +110,34 @@ pip install -r requirements.txt
 # Set up environment variables (create backend/.env manually if missing)
 # Add your key:
 # THE_ODDS_API_KEY=your_key_here
+#
+# Optional logging (see "Application logging" below):
+# LOG_LEVEL=INFO
+# LOG_FORMAT=text
 
 uvicorn main:app --reload
 ```
 
 Then open `http://localhost:8000`.
+
+### Application logging
+
+The backend emits structured application logs (stdlib `logging`, no extra dependencies).
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `LOG_LEVEL` | `INFO` | Root log level (`DEBUG`, `INFO`, `WARNING`, …) |
+| `LOG_FORMAT` | `text` locally; `json` on Render / `ENVIRONMENT=production` | Line format |
+
+JSON mode writes one JSON object per line with `timestamp`, `level`, `logger`, `message`, plus structured fields (`request_id`, `path`, `status_code`, `sport_key`, cache outcomes, upstream errors, …). Secrets matching `api_key` / `token` / `password` / `authorization` are redacted.
+
+Every HTTP response (except `/assets/*`) gets an `X-Request-ID` header. Pass `X-Request-ID` on the request to correlate client and server logs.
+
+Operational events are logged from:
+- `bettor.http` — request completion (method, path, status, duration)
+- `bettor.cache` — picks cache hit / miss / bypass
+- `bettor.odds.client` — Odds API HTTP / transport / timeout / invalid-JSON failures (never logs the API key)
+- `bettor.odds.service` — slate / single-game fetch outcomes (source, counts, warning flags)
 
 ## Demo
 How to use:
@@ -202,6 +225,7 @@ Coverage by area (`backend/tests/`):
 - `test_odds_upstream.py` - upstream request shape, 429/402/5xx handling, retry behavior, undecodable bodies, prop fan-out caps.
 - `test_fetch_slate.py` / `test_fetch_event.py` - demo/live source selection, partial-failure degradation, warning propagation.
 - `test_api_picks.py` - `/api/health`, `/api/picks`, `/api/picks/game`: response envelopes, validation errors, cache headers, concurrent-request de-duplication.
+- `test_logging.py` - JSON/text formatters, secret redaction, `LOG_*` env defaults, request-id middleware and request completion logs.
 - `test_suite_guardrails.py` - proves the suite itself cannot use a real key or real network.
 - `test_module_boundaries.py` - verifies the odds service module split: each layer's isolation, dependency graph (no upward/cross-layer imports), and that every public symbol is re-exported from `service.py`.
 
