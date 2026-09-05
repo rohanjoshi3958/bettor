@@ -14,8 +14,9 @@ Python's stable sort is intentional: equal scores retain their input order.
 from __future__ import annotations
 
 import math
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
-from typing import Callable, Iterable, TypeVar
+from typing import TypeVar
 
 
 @dataclass(frozen=True)

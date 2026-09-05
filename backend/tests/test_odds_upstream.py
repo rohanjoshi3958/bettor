@@ -6,6 +6,7 @@ import httpx
 import pytest
 
 from services.odds import service as svc
+from services.odds import client as client_mod
 from tests.helpers import Fail, Raise, Seq, freeze_time, h2h_quotes, odds_event, quote
 
 from datetime import datetime, timezone
@@ -15,8 +16,8 @@ NOW = datetime(2026, 6, 15, 18, 0, tzinfo=timezone.utc)
 
 @pytest.fixture
 async def odds_client(fake_odds_api):
-    """An httpx client wired to the fake Odds API (the fixture patches the service's httpx)."""
-    async with svc.httpx.AsyncClient() as client:
+    """An httpx client wired to the fake Odds API (the fixture patches the client module's httpx)."""
+    async with client_mod.httpx.AsyncClient() as client:
         yield client
 
 
@@ -349,7 +350,7 @@ class TestFetchPropSport:
         self, monkeypatch, fake_odds_api, odds_client
     ):
         freeze_time(monkeypatch, NOW)
-        monkeypatch.setattr(svc, "MAX_PROP_EVENTS_PER_SPORT", 2)
+        monkeypatch.setattr(client_mod, "MAX_PROP_EVENTS_PER_SPORT", 2)
         fake_odds_api.set_events(
             "basketball_nba",
             [odds_event(f"g{i}", commence_time=f"2026-06-15T{19 + i}:00:00Z") for i in range(5)],

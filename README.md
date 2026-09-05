@@ -42,6 +42,41 @@ Data flow:
 3. Service computes implied probability + edge, then the ranking engine applies its documented thresholds/fallbacks and ranks lines.
 4. Response returns grouped games + metadata, and frontend renders league/game cards.
 
+### Odds service module structure
+
+The odds service (`backend/services/odds/`) is split into focused modules. Each layer only imports from layers below it; there are no upward or cross-layer dependencies.
+
+```
+API layer  (app/api/picks.py)
+    │
+    ▼
+service.py          ← orchestration: demo vs live branching, client fan-out, response assembly
+    │               also re-exports all public symbols for backward compatibility
+    ├── client.py           ← HTTP requests to The Odds API, quota tracking, retry, warnings
+    │       ├── parser.py           ← convert raw API payloads into BetPick domain objects
+    │       │       ├── normalization.py    ← event-ID normalise, time utils, shell/merge helpers
+    │       │       │       └── models.py   ← BetPick dataclass, shared constants
+    │       │       └── sports.py           ← sport keys, markets, display titles, get_api_key
+    │       └── normalization.py
+    ├── ranking.py          ← adapts BetPick rows to services/ranking.py; group/JSON/fallback
+    │       ├── normalization.py
+    │       └── services/ranking.py   ← dependency-free score + floors (configurable)
+    ├── demo.py             ← static fallback picks (no HTTP)
+    │       ├── normalization.py
+    │       └── sports.py
+    └── normalization.py    ← also wraps services/ranking.py for implied_probability
+```
+
+Dependency rules enforced by `tests/test_module_boundaries.py`:
+- **models** — no HTTP/I/O; may read floors from `services.ranking`
+- **sports** — no internal odds imports; sport/provider config + env-key resolution only
+- **normalization** — no HTTP; no `services.odds.ranking` / parser / client
+- **parser** — imports `models`, `normalization`, `sports`; no HTTP
+- **ranking** — imports `models`, `normalization`, and `services.ranking`; no HTTP, no parser
+- **demo** — imports `models`, `normalization`, `sports`; no HTTP
+- **client** — imports `models`, `normalization`, `parser`; no ranking, no demo
+- **service** — imports all of the above; owns orchestration and public re-exports
+
 Key design choices:
 - In-memory short-TTL cache (`picks_cache.py`) to reduce redundant API fan-out.
 - Per-request metadata (source, fallback used, warning state) for transparency.
@@ -95,26 +130,47 @@ Useful API checks:
 - `GET /api/picks?date=YYYY-MM-DD&timezone=America/New_York`
 - `GET /api/picks/game?sport_key=basketball_nba&event_id=<id>&date=YYYY-MM-DD&timezone=America/New_York`
 
-## Testing / Error Handling 
-Automated backend test suite (pytest). Install dev dependencies once, then run tests from
-`backend/` — that directory contains `pytest.ini` (`asyncio_mode`, `pythonpath`, etc.). Running
-bare `pytest` from the repo root skips that config and async tests will fail.
+## CI Quality Gates
+
+Every push and pull request runs the full backend quality gate via
+`.github/workflows/backend-tests.yml`. The workflow runs on Python 3.11 and 3.12, requires no
+Odds API key, and makes no external network calls.
+
+### Local equivalents
+
+Install dev dependencies once, then run all three checks from `backend/`:
 
 ```bash
 cd backend
 pip install -r requirements-dev.txt
+```
+
+**Lint (ruff)**
+
+```bash
+ruff check app/ services/
+```
+
+**Type check (mypy)**
+
+```bash
+mypy app/ services/
+```
+
+**Tests (pytest)**
+
+```bash
 python -m pytest
 ```
 
 Run a single file or test:
 
 ```bash
-cd backend
 python -m pytest tests/test_cors.py
 python -m pytest tests/test_cors.py::TestGetCorsOrigins::test_returns_production_origin_when_env_is_set -v
 ```
 
-Optional coverage report (also from `backend/`):
+Optional coverage report:
 
 ```bash
 python -m pytest --cov=app --cov=services --cov-report=term-missing
@@ -126,11 +182,15 @@ From the repo root, pass the backend config explicitly:
 python -m pytest -c backend/pytest.ini backend/tests
 ```
 
-The suite is deterministic and CI-safe: it needs no Odds API key and makes no external network
-calls. The Odds API is mocked at the HTTP boundary (`httpx.MockTransport`), the current time is
-pinned for any test that depends on slate windows, and an autouse fixture fails any test that
-tries to reach the internet. It runs on every push and pull request via
-`.github/workflows/backend-tests.yml`.
+### What the checks cover
+
+- **ruff** — import order, style, modernization (`E`, `F`, `I`, `UP`, `W` rules; configured in
+  `backend/pyproject.toml`).
+- **mypy** — static type checking scoped to `app/` and `services/`; configuration in
+  `backend/pyproject.toml`.
+- **pytest** — full deterministic test suite. The Odds API is mocked at the HTTP boundary
+  (`httpx.MockTransport`), the current time is pinned for slate-window tests, and an autouse
+  fixture fails any test that reaches the real network.
 
 Coverage by area (`backend/tests/`):
 - `test_normalization.py` - event-id normalization, implied probability, timestamp parsing, prop labels, API-key resolution.
@@ -143,6 +203,7 @@ Coverage by area (`backend/tests/`):
 - `test_fetch_slate.py` / `test_fetch_event.py` - demo/live source selection, partial-failure degradation, warning propagation.
 - `test_api_picks.py` - `/api/health`, `/api/picks`, `/api/picks/game`: response envelopes, validation errors, cache headers, concurrent-request de-duplication.
 - `test_suite_guardrails.py` - proves the suite itself cannot use a real key or real network.
+- `test_module_boundaries.py` - verifies the odds service module split: each layer's isolation, dependency graph (no upward/cross-layer imports), and that every public symbol is re-exported from `service.py`.
 
 Manual checks still used alongside the suite:
 - Endpoint validation with different dates/timezones and league selections.
