@@ -95,26 +95,47 @@ Useful API checks:
 - `GET /api/picks?date=YYYY-MM-DD&timezone=America/New_York`
 - `GET /api/picks/game?sport_key=basketball_nba&event_id=<id>&date=YYYY-MM-DD&timezone=America/New_York`
 
-## Testing / Error Handling 
-Automated backend test suite (pytest). Install dev dependencies once, then run tests from
-`backend/` — that directory contains `pytest.ini` (`asyncio_mode`, `pythonpath`, etc.). Running
-bare `pytest` from the repo root skips that config and async tests will fail.
+## CI Quality Gates
+
+Every push and pull request runs the full backend quality gate via
+`.github/workflows/backend-tests.yml`. The workflow runs on Python 3.11 and 3.12, requires no
+Odds API key, and makes no external network calls.
+
+### Local equivalents
+
+Install dev dependencies once, then run all three checks from `backend/`:
 
 ```bash
 cd backend
 pip install -r requirements-dev.txt
+```
+
+**Lint (ruff)**
+
+```bash
+ruff check app/ services/
+```
+
+**Type check (mypy)**
+
+```bash
+mypy app/ services/
+```
+
+**Tests (pytest)**
+
+```bash
 python -m pytest
 ```
 
 Run a single file or test:
 
 ```bash
-cd backend
 python -m pytest tests/test_cors.py
 python -m pytest tests/test_cors.py::TestGetCorsOrigins::test_returns_production_origin_when_env_is_set -v
 ```
 
-Optional coverage report (also from `backend/`):
+Optional coverage report:
 
 ```bash
 python -m pytest --cov=app --cov=services --cov-report=term-missing
@@ -126,11 +147,15 @@ From the repo root, pass the backend config explicitly:
 python -m pytest -c backend/pytest.ini backend/tests
 ```
 
-The suite is deterministic and CI-safe: it needs no Odds API key and makes no external network
-calls. The Odds API is mocked at the HTTP boundary (`httpx.MockTransport`), the current time is
-pinned for any test that depends on slate windows, and an autouse fixture fails any test that
-tries to reach the internet. It runs on every push and pull request via
-`.github/workflows/backend-tests.yml`.
+### What the checks cover
+
+- **ruff** — import order, style, modernization (`E`, `F`, `I`, `UP`, `W` rules; configured in
+  `backend/pyproject.toml`).
+- **mypy** — static type checking scoped to `app/` and `services/`; configuration in
+  `backend/pyproject.toml`.
+- **pytest** — full deterministic test suite. The Odds API is mocked at the HTTP boundary
+  (`httpx.MockTransport`), the current time is pinned for slate-window tests, and an autouse
+  fixture fails any test that reaches the real network.
 
 Coverage by area (`backend/tests/`):
 - `test_normalization.py` - event-id normalization, implied probability, timestamp parsing, prop labels, API-key resolution.

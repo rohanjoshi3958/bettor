@@ -1,10 +1,9 @@
 """JSON API: health, full slate, single-game picks."""
 
 from datetime import date
+from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, HTTPException, Query, Response
-
-from zoneinfo import ZoneInfo
 
 from app.core.calendar import default_pickable_game_day, enforce_pickable_game_day
 from app.models import GameModel, HealthResponse, PicksGameResponse, PicksSlateResponse
@@ -45,11 +44,11 @@ def health():
 
 @router.get("/picks", response_model=PicksSlateResponse)
 async def picks(
+    response: Response,
     picks_per_game: int = Query(default=PICKS_PER_GAME, ge=1, le=25),
     max_games: int | None = Query(default=None),
     game_date: str | None = Query(default=None, alias="date"),
     tz_name: str = Query(default="America/New_York", alias="timezone"),
-    response: Response = None,
 ):
     try:
         z = ZoneInfo(tz_name)
@@ -120,12 +119,12 @@ async def picks(
 
 @router.get("/picks/game", response_model=PicksGameResponse)
 async def picks_one_game(
+    response: Response,
     sport_key: str = Query(..., min_length=1),
     event_id: str = Query(..., min_length=1),
     picks_per_game: int = Query(default=PICKS_PER_GAME, ge=1, le=25),
     game_date: str | None = Query(default=None, alias="date"),
     tz_name: str = Query(default="America/New_York", alias="timezone"),
-    response: Response = None,
 ):
     if not supported_sport_key(sport_key):
         raise HTTPException(

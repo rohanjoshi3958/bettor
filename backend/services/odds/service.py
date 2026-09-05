@@ -16,7 +16,7 @@ import asyncio
 import os
 from collections import defaultdict
 from dataclasses import dataclass
-from datetime import date, datetime, time, timedelta, timezone
+from datetime import UTC, date, datetime, time, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -84,7 +84,7 @@ def implied_probability(decimal_odds: float) -> float:
     return min(1.0, 1.0 / decimal_odds)
 
 
-def rank_score(p: "BetPick") -> float:
+def rank_score(p: BetPick) -> float:
     """Blend: implied on 0–100 scale (from best price) + line edge % (best vs mean of your books)."""
     return _RANK_IMPLIED_WEIGHT * (p.implied_probability * 100.0) + _RANK_EDGE_WEIGHT * p.edge_pct
 
@@ -101,7 +101,7 @@ def local_day_bounds_utc(day: date, tz_name: str) -> tuple[datetime, datetime]:
     z = _zone(tz_name)
     start_local = datetime.combine(day, time.min, tzinfo=z)
     end_local = start_local + timedelta(days=1)
-    return start_local.astimezone(timezone.utc), end_local.astimezone(timezone.utc)
+    return start_local.astimezone(UTC), end_local.astimezone(UTC)
 
 
 def _parse_commence(raw: Any) -> datetime | None:
@@ -118,14 +118,14 @@ def _commence_time_utc(raw: Any) -> datetime | None:
     if ct is None:
         return None
     if ct.tzinfo is None:
-        return ct.replace(tzinfo=timezone.utc)
-    return ct.astimezone(timezone.utc)
+        return ct.replace(tzinfo=UTC)
+    return ct.astimezone(UTC)
 
 
 def _utc_iso_z(dt: datetime) -> str:
     if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=timezone.utc)
-    return dt.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+        dt = dt.replace(tzinfo=UTC)
+    return dt.astimezone(UTC).isoformat().replace("+00:00", "Z")
 
 
 def _event_dict_to_shell(ev: dict[str, Any], sport_key: str, sport_title: str) -> dict[str, Any]:
@@ -229,7 +229,7 @@ def _merge_scheduled_with_picks(
         ct = _commence_time_utc(g.get("commence_time") or "")
         eid = _normalize_event_id(g.get("event_id"))
         if ct is None:
-            return (datetime.max.replace(tzinfo=timezone.utc), eid)
+            return (datetime.max.replace(tzinfo=UTC), eid)
         return (ct, eid)
 
     out.sort(key=sk)
@@ -240,7 +240,7 @@ def _merge_scheduled_with_picks(
 
 def _exclude_past_kickoff_games(games: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Drop games whose scheduled commence time is at or before now (started or finished)."""
-    now_utc = datetime.now(timezone.utc)
+    now_utc = datetime.now(UTC)
     out: list[dict[str, Any]] = []
     for g in games:
         ct = _commence_time_utc(g.get("commence_time") or "")
@@ -256,7 +256,7 @@ def _kickoff_still_upcoming(game: dict[str, Any]) -> bool:
     ct = _commence_time_utc(game.get("commence_time") or "")
     if ct is None:
         return True
-    return ct > datetime.now(timezone.utc)
+    return ct > datetime.now(UTC)
 
 
 def filter_picks_by_game_day(picks: list[BetPick], for_day: date, tz_name: str) -> list[BetPick]:
@@ -264,7 +264,7 @@ def filter_picks_by_game_day(picks: list[BetPick], for_day: date, tz_name: str) 
     start_utc, end_utc = local_day_bounds_utc(for_day, tz_name)
     z = _zone(tz_name)
     today_user = datetime.now(z).date()
-    now_utc = datetime.now(timezone.utc)
+    now_utc = datetime.now(UTC)
     out: list[BetPick] = []
     for p in picks:
         ct = _commence_time_utc(p.commence_time)
@@ -364,8 +364,8 @@ class BetPick:
 def _demo_commence_on_day(for_day: date, tz_name: str, hour: int, minute: int = 0) -> str:
     z = _zone(tz_name)
     dt = datetime.combine(for_day, time(hour, minute), tzinfo=z)
-    utc = dt.astimezone(timezone.utc)
-    now_utc = datetime.now(timezone.utc)
+    utc = dt.astimezone(UTC)
+    now_utc = datetime.now(UTC)
     if utc <= now_utc:
         _, end_utc = local_day_bounds_utc(for_day, tz_name)
         bump = now_utc + timedelta(hours=2, minutes=5)
@@ -813,7 +813,7 @@ def _events_sorted_by_kickoff(events: list[dict[str, Any]]) -> list[dict[str, An
     for ev in events:
         ct = _event_commence_utc(ev)
         eid = str(ev.get("id") or "")
-        sort_t = ct if ct is not None else datetime.max.replace(tzinfo=timezone.utc)
+        sort_t = ct if ct is not None else datetime.max.replace(tzinfo=UTC)
         keyed.append((sort_t, eid, ev))
     keyed.sort(key=lambda x: (x[0], x[1]))
     return [t[2] for t in keyed]
@@ -824,7 +824,7 @@ def _events_upcoming_sorted_for_props(
     cap: int,
 ) -> list[dict[str, Any]]:
     """Not-started events only, sorted by kickoff; cap limits Odds API /events/{{id}}/odds volume."""
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     out: list[dict[str, Any]] = []
     for ev in _events_sorted_by_kickoff(events):
         ct = _event_commence_utc(ev)
@@ -1105,7 +1105,7 @@ async def fetch_best_picks(
         batch: list[BetPick] = []
         shell_batch: list[dict[str, Any]] = []
         for res in gathered:
-            if isinstance(res, Exception):
+            if isinstance(res, BaseException):
                 continue
             picks_part, shells_part = res
             batch.extend(picks_part)
@@ -1116,9 +1116,9 @@ async def fetch_best_picks(
 
     seen_keys: dict[tuple[str, str], dict[str, Any]] = {}
     for s in all_shells:
-        key = _merge_game_key(s.get("sport_key"), s.get("event_id"))
-        if key not in seen_keys:
-            seen_keys[key] = s
+        game_key = _merge_game_key(s.get("sport_key"), s.get("event_id"))
+        if game_key not in seen_keys:
+            seen_keys[game_key] = s
     shells_unique = list(seen_keys.values())
     shells_filtered = _filter_shells_by_game_day(shells_unique, for_day, timezone_name)
 
@@ -1200,7 +1200,7 @@ def group_picks_into_games(
         ct = _commence_time_utc(b["commence_time"])
         eid = _normalize_event_id(b.get("event_id"))
         if ct is None:
-            return (datetime.max.replace(tzinfo=timezone.utc), eid)
+            return (datetime.max.replace(tzinfo=UTC), eid)
         return (ct, eid)
 
     blocks.sort(key=sort_key)
