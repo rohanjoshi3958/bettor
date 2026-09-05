@@ -33,13 +33,13 @@ AI exceeded expectations in rapid refactors and issue triage, and fell short whe
 
 ## Architecture / Design Decisions
 Backend/frontend structure:
-- `backend/`: FastAPI app, Odds API integration, ranking/filtering logic, cache layer.
+- `backend/`: FastAPI app, Odds API integration, cache layer, and a dependency-free ranking engine (`services/ranking.py`).
 - `frontend/`: static HTML/CSS/JS client that calls backend JSON endpoints.
 
 Data flow:
 1. Frontend requests `/api/picks` or `/api/picks/game`.
 2. Backend fetches upstream odds data (or demo fallback when no key).
-3. Service computes implied probability + edge, applies thresholds/fallbacks, ranks lines.
+3. Service computes implied probability + edge, then the ranking engine applies its documented thresholds/fallbacks and ranks lines.
 4. Response returns grouped games + metadata, and frontend renders league/game cards.
 
 ### Odds service module structure
@@ -58,20 +58,21 @@ service.py          ← orchestration: demo vs live branching, client fan-out, r
     │       │       │       └── models.py   ← BetPick dataclass, shared constants
     │       │       └── sports.py           ← sport keys, markets, display titles, get_api_key
     │       └── normalization.py
-    ├── ranking.py          ← rank_score, group_picks_into_games, picks_to_json, implied-prob fallback
-    │       └── normalization.py
+    ├── ranking.py          ← adapts BetPick rows to services/ranking.py; group/JSON/fallback
+    │       ├── normalization.py
+    │       └── services/ranking.py   ← dependency-free score + floors (configurable)
     ├── demo.py             ← static fallback picks (no HTTP)
     │       ├── normalization.py
     │       └── sports.py
-    └── normalization.py
+    └── normalization.py    ← also wraps services/ranking.py for implied_probability
 ```
 
 Dependency rules enforced by `tests/test_module_boundaries.py`:
-- **models** — no internal imports; pure data (dataclass + constants)
-- **sports** — no internal imports; sport/provider config + env-key resolution only
-- **normalization** — imports `models` only; no HTTP, no ranking
+- **models** — no HTTP/I/O; may read floors from `services.ranking`
+- **sports** — no internal odds imports; sport/provider config + env-key resolution only
+- **normalization** — no HTTP; no `services.odds.ranking` / parser / client
 - **parser** — imports `models`, `normalization`, `sports`; no HTTP
-- **ranking** — imports `models`, `normalization`; no HTTP, no parser
+- **ranking** — imports `models`, `normalization`, and `services.ranking`; no HTTP, no parser
 - **demo** — imports `models`, `normalization`, `sports`; no HTTP
 - **client** — imports `models`, `normalization`, `parser`; no ranking, no demo
 - **service** — imports all of the above; owns orchestration and public re-exports

@@ -14,6 +14,7 @@ from datetime import UTC, date, datetime, time, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
 
+from services import ranking
 from services.odds.models import BetPick
 
 # ---------------------------------------------------------------------------
@@ -52,11 +53,9 @@ def _normalize_event_id(raw: Any) -> str:
 # Implied probability
 # ---------------------------------------------------------------------------
 
-def implied_probability(decimal_odds: float) -> float:
-    """Naive implied prob from the best decimal price: 1/odds (no de-vig across books)."""
-    if decimal_odds <= 1.0:
-        return 0.0
-    return min(1.0, 1.0 / decimal_odds)
+def implied_probability(decimal_odds: float | None) -> float:
+    """Compatibility wrapper for the ranking engine's odds-to-metric helper."""
+    return ranking.implied_probability(decimal_odds)
 
 
 # ---------------------------------------------------------------------------

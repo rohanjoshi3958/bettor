@@ -8,11 +8,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-# Market-implied probability = 1 / decimal_odds (naive; not de-vigged).
-# 55% was often too strict with 4 books + 2-book minimum → empty slates.
-# 0.52 primary, 0.50 fallback.
-MIN_IMPLIED_PROBABILITY = 0.52
-RELAXED_IMPLIED_PROBABILITY = 0.50
+from services import ranking
+
+# Ranking floors are owned by the dependency-free ranking engine; keep these names
+# as compatibility aliases for callers and response metadata.
+MIN_IMPLIED_PROBABILITY = ranking.DEFAULT_RANKING_CONFIG.min_implied_probability
+RELAXED_IMPLIED_PROBABILITY = ranking.DEFAULT_RANKING_CONFIG.relaxed_implied_probability
 
 # Top picks to keep per game (grouped by event).
 PICKS_PER_GAME = 3

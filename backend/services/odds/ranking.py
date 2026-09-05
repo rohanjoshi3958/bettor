@@ -5,6 +5,9 @@ Responsibilities:
 - `group_picks_into_games`: apply floor, select top-N per game, sort by kickoff.
 - `picks_to_json`: serialize BetPick rows into the frontend response contract.
 - `_group_with_implied_fallback`: try the primary floor then a relaxed fallback.
+
+Scoring policy lives in the dependency-free ``services.ranking`` engine; this module
+adapts ``BetPick`` rows to that contract and shapes API-facing game blocks.
 """
 
 from __future__ import annotations
@@ -13,17 +16,24 @@ from collections import defaultdict
 from datetime import UTC, datetime
 from typing import Any
 
-from services.odds.models import MIN_IMPLIED_PROBABILITY, PICKS_PER_GAME, RELAXED_IMPLIED_PROBABILITY, BetPick
+from services import ranking
+from services.odds.models import (
+    MIN_IMPLIED_PROBABILITY,
+    PICKS_PER_GAME,
+    RELAXED_IMPLIED_PROBABILITY,
+    BetPick,
+)
 from services.odds.normalization import _commence_time_utc, _merge_game_key, _normalize_event_id
-
-# Rank = blend of high implied prob + line-shopping edge (best vs avg among your books).
-_RANK_IMPLIED_WEIGHT = 0.55
-_RANK_EDGE_WEIGHT = 0.45
 
 
 def rank_score(p: BetPick) -> float:
-    """Blend: implied on 0–100 scale (from best price) + line edge % (best vs mean of your books)."""
-    return _RANK_IMPLIED_WEIGHT * (p.implied_probability * 100.0) + _RANK_EDGE_WEIGHT * p.edge_pct
+    """Compatibility wrapper for the configured, dependency-free rank engine."""
+    return ranking.score(
+        ranking.PickRankingMetrics(
+            implied_probability=p.implied_probability,
+            edge_pct=p.edge_pct,
+        )
+    )
 
 
 def picks_to_json(picks: list[BetPick]) -> list[dict[str, Any]]:
@@ -59,14 +69,24 @@ def group_picks_into_games(
 ) -> list[dict[str, Any]]:
     """Group by (sport_key, event_id); keep top `picks_per_game` by rank_score per game."""
     floor = MIN_IMPLIED_PROBABILITY if min_implied is None else min_implied
-    filtered = [p for p in picks if p.implied_probability >= floor]
+    filtered = [
+        p
+        for p in picks
+        if ranking.meets_implied_probability_floor(
+            ranking.PickRankingMetrics(p.implied_probability, p.edge_pct),
+            floor,
+        )
+    ]
     by_game: dict[tuple[str, str], list[BetPick]] = defaultdict(list)
     for p in filtered:
         k = _merge_game_key(p.sport_key, p.event_id)
         by_game[k].append(p)
     blocks: list[dict[str, Any]] = []
     for plist in by_game.values():
-        plist.sort(key=rank_score, reverse=True)
+        plist = ranking.sort_picks(
+            plist,
+            lambda p: ranking.PickRankingMetrics(p.implied_probability, p.edge_pct),
+        )
         top = plist[:picks_per_game]
         if not top:
             continue
