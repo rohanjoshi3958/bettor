@@ -33,13 +33,13 @@ AI exceeded expectations in rapid refactors and issue triage, and fell short whe
 
 ## Architecture / Design Decisions
 Backend/frontend structure:
-- `backend/`: FastAPI app, Odds API integration, ranking/filtering logic, cache layer.
+- `backend/`: FastAPI app, Odds API integration, cache layer, and a dependency-free ranking engine (`services/ranking.py`).
 - `frontend/`: static HTML/CSS/JS client that calls backend JSON endpoints.
 
 Data flow:
 1. Frontend requests `/api/picks` or `/api/picks/game`.
 2. Backend fetches upstream odds data (or demo fallback when no key).
-3. Service computes implied probability + edge, applies thresholds/fallbacks, ranks lines.
+3. Service computes implied probability + edge, then the ranking engine applies its documented thresholds/fallbacks and ranks lines.
 4. Response returns grouped games + metadata, and frontend renders league/game cards.
 
 Key design choices:

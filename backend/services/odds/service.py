@@ -22,6 +22,8 @@ from zoneinfo import ZoneInfo
 
 import httpx
 
+from services import ranking
+
 ODDS_BASE = "https://api.the-odds-api.com/v4"
 
 # Only these books (The Odds API keys).
@@ -36,14 +38,10 @@ MAX_PROP_EVENTS_PER_SPORT = int(os.environ.get("MAX_PROP_EVENTS_PER_SPORT", "20"
 # Concurrent /events/{id}/odds calls — keep low to avoid 429 rate limits on The Odds API.
 _PROP_FETCH_CONCURRENCY = int(os.environ.get("ODDS_PROP_CONCURRENCY", "4"))
 
-# Market-implied probability = 1 / decimal_odds (naive; not de-vigged).
-# 55% was often too strict with 4 books + 2-book minimum → empty slates; 0.52 primary, 0.50 fallback.
-MIN_IMPLIED_PROBABILITY = 0.52
-RELAXED_IMPLIED_PROBABILITY = 0.50
-
-# Rank = blend of high implied prob + line-shopping edge (best vs avg among your books).
-_RANK_IMPLIED_WEIGHT = 0.55
-_RANK_EDGE_WEIGHT = 0.45
+# Ranking policy is centralized in the dependency-free domain engine.  Keep
+# these names as compatibility aliases for callers and response metadata.
+MIN_IMPLIED_PROBABILITY = ranking.DEFAULT_RANKING_CONFIG.min_implied_probability
+RELAXED_IMPLIED_PROBABILITY = ranking.DEFAULT_RANKING_CONFIG.relaxed_implied_probability
 
 # Top picks to keep per game (grouped by event).
 PICKS_PER_GAME = 3
@@ -77,16 +75,19 @@ def _normalize_event_id(raw: Any) -> str:
     return s
 
 
-def implied_probability(decimal_odds: float) -> float:
-    """Naive implied prob from the best decimal price: 1/odds (no de-vig across books)."""
-    if decimal_odds <= 1.0:
-        return 0.0
-    return min(1.0, 1.0 / decimal_odds)
+def implied_probability(decimal_odds: float | None) -> float:
+    """Compatibility wrapper for the ranking engine's odds-to-metric helper."""
+    return ranking.implied_probability(decimal_odds)
 
 
 def rank_score(p: "BetPick") -> float:
-    """Blend: implied on 0–100 scale (from best price) + line edge % (best vs mean of your books)."""
-    return _RANK_IMPLIED_WEIGHT * (p.implied_probability * 100.0) + _RANK_EDGE_WEIGHT * p.edge_pct
+    """Compatibility wrapper for the configured, dependency-free rank engine."""
+    return ranking.score(
+        ranking.PickRankingMetrics(
+            implied_probability=p.implied_probability,
+            edge_pct=p.edge_pct,
+        )
+    )
 
 
 def _zone(tz_name: str) -> ZoneInfo:
@@ -1170,14 +1171,23 @@ def group_picks_into_games(
 ) -> list[dict[str, Any]]:
     """Group by (sport_key, event_id); keep top `picks_per_game` by rank_score per game."""
     floor = MIN_IMPLIED_PROBABILITY if min_implied is None else min_implied
-    filtered = [p for p in picks if p.implied_probability >= floor]
+    filtered = [
+        p
+        for p in picks
+        if ranking.meets_implied_probability_floor(
+            ranking.PickRankingMetrics(p.implied_probability, p.edge_pct), floor
+        )
+    ]
     by_game: dict[tuple[str, str], list[BetPick]] = defaultdict(list)
     for p in filtered:
         k = _merge_game_key(p.sport_key, p.event_id)
         by_game[k].append(p)
     blocks: list[dict[str, Any]] = []
     for plist in by_game.values():
-        plist.sort(key=rank_score, reverse=True)
+        plist = ranking.sort_picks(
+            plist,
+            lambda p: ranking.PickRankingMetrics(p.implied_probability, p.edge_pct),
+        )
         top = plist[:picks_per_game]
         if not top:
             continue

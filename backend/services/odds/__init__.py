@@ -1,5 +1,5 @@
 """
-Odds API integration: slate fetch, per-event refresh, pick ranking.
+Odds API integration: slate fetch and per-event refresh.
 
 Implementation lives in `service.py`; this module exposes the stable public API.
 """

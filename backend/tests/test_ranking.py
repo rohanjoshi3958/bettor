@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import pytest
 
+from services import ranking
 from services.odds import service as svc
 from tests.helpers import iso_offset, make_pick
 
@@ -28,6 +29,33 @@ class TestRankScore:
         big_edge = make_pick(implied_probability=0.55, edge_pct=8.0)
         tiny_edge = make_pick(implied_probability=0.57, edge_pct=0.0)
         assert svc.rank_score(big_edge) > svc.rank_score(tiny_edge)
+
+
+class TestRankingEngine:
+    def test_default_configuration_preserves_the_existing_formula(self):
+        metrics = ranking.PickRankingMetrics(implied_probability=0.60, edge_pct=4.0)
+        assert ranking.score(metrics) == pytest.approx(0.55 * 60.0 + 0.45 * 4.0)
+
+    @pytest.mark.parametrize(
+        "metrics",
+        [
+            ranking.PickRankingMetrics(implied_probability=None, edge_pct=None),
+            ranking.PickRankingMetrics(implied_probability=0.0, edge_pct=0.0),
+            ranking.PickRankingMetrics(implied_probability=float("nan"), edge_pct=float("inf")),
+        ],
+    )
+    def test_missing_or_zero_metrics_are_safe_and_explicit(self, metrics):
+        assert ranking.score(metrics) == 0.0
+        assert ranking.meets_implied_probability_floor(metrics, 0.01) is False
+
+    def test_ties_keep_input_order(self):
+        picks = ["first", "second"]
+        metrics = {pick: ranking.PickRankingMetrics(0.60, 2.0) for pick in picks}
+        assert ranking.sort_picks(picks, metrics.__getitem__) == picks
+
+    def test_configuration_can_change_weights_without_service_dependencies(self):
+        config = ranking.RankingConfig(implied_probability_weight=1.0, edge_weight=0.0)
+        assert ranking.score(ranking.PickRankingMetrics(0.61, 999.0), config) == 61.0
 
 
 class TestGroupPicksIntoGames:
