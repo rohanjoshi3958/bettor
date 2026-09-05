@@ -21,12 +21,12 @@ import httpx
 
 from services.odds.models import BetPick
 from services.odds.normalization import (
+    _events_sorted_by_kickoff,
     _events_upcoming_sorted_for_props,
     _normalize_event_id,
     shells_from_scheduled_events,
 )
 from services.odds.parser import _h2h_events_to_picks, _prop_event_to_picks
-from services.odds.normalization import _events_sorted_by_kickoff
 
 ODDS_BASE = "https://api.the-odds-api.com/v4"
 

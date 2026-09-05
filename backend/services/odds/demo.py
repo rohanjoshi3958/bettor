@@ -6,18 +6,18 @@ integration tests that don't want to exercise the upstream Odds API.
 
 from __future__ import annotations
 
-from datetime import date, datetime, time, timedelta, timezone
+from datetime import UTC, date, datetime, time, timedelta
 
 from services.odds.models import BetPick
-from services.odds.normalization import implied_probability, local_day_bounds_utc, _zone
+from services.odds.normalization import _zone, implied_probability, local_day_bounds_utc
 from services.odds.sports import _sport_titles
 
 
 def _demo_commence_on_day(for_day: date, tz_name: str, hour: int, minute: int = 0) -> str:
     z = _zone(tz_name)
     dt = datetime.combine(for_day, time(hour, minute), tzinfo=z)
-    utc = dt.astimezone(timezone.utc)
-    now_utc = datetime.now(timezone.utc)
+    utc = dt.astimezone(UTC)
+    now_utc = datetime.now(UTC)
     if utc <= now_utc:
         _, end_utc = local_day_bounds_utc(for_day, tz_name)
         bump = now_utc + timedelta(hours=2, minutes=5)

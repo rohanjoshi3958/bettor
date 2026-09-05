@@ -10,10 +10,10 @@ Responsibilities:
 from __future__ import annotations
 
 from collections import defaultdict
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
-from services.odds.models import BetPick, MIN_IMPLIED_PROBABILITY, PICKS_PER_GAME, RELAXED_IMPLIED_PROBABILITY
+from services.odds.models import MIN_IMPLIED_PROBABILITY, PICKS_PER_GAME, RELAXED_IMPLIED_PROBABILITY, BetPick
 from services.odds.normalization import _commence_time_utc, _merge_game_key, _normalize_event_id
 
 # Rank = blend of high implied prob + line-shopping edge (best vs avg among your books).
@@ -89,7 +89,7 @@ def group_picks_into_games(
         ct = _commence_time_utc(b["commence_time"])
         eid = _normalize_event_id(b.get("event_id"))
         if ct is None:
-            return (datetime.max.replace(tzinfo=timezone.utc), eid)
+            return (datetime.max.replace(tzinfo=UTC), eid)
         return (ct, eid)
 
     blocks.sort(key=sort_key)

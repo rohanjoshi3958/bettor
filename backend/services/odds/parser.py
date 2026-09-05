@@ -14,7 +14,6 @@ from services.odds.models import ALLOWED_BOOKMAKER_KEYS, BetPick
 from services.odds.normalization import _normalize_event_id, implied_probability
 from services.odds.sports import _MARKET_LABELS
 
-
 # ---------------------------------------------------------------------------
 # Price type helpers
 # ---------------------------------------------------------------------------

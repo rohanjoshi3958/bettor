@@ -11,33 +11,36 @@ All symbols that were previously defined here are re-exported below so existing 
 from __future__ import annotations
 
 import asyncio
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, timedelta
 from typing import Any
 
 import httpx
+
+from services.odds.client import (  # noqa: F401
+    _BOOKMAKERS_PARAM,
+    _ODDS_REGIONS,
+    _PROP_FETCH_CONCURRENCY,
+    MAX_PROP_EVENTS_PER_SPORT,
+    ODDS_BASE,
+    _fetch_bulk_h2h,
+    _fetch_event_props,
+    _fetch_events,
+    _fetch_prop_sport,
+    _note_odds_api_quota_issue,
+    _odds_api_warning_message,
+)
+from services.odds.demo import demo_picks  # noqa: F401
 
 # ---------------------------------------------------------------------------
 # Re-exports — maintain backward compatibility for any code importing directly
 # from services.odds.service
 # ---------------------------------------------------------------------------
-
 from services.odds.models import (  # noqa: F401
     ALLOWED_BOOKMAKER_KEYS,
     MIN_IMPLIED_PROBABILITY,
     PICKS_PER_GAME,
     RELAXED_IMPLIED_PROBABILITY,
     BetPick,
-)
-from services.odds.sports import (  # noqa: F401
-    NBA_PROP_MARKETS,
-    NFL_PROP_MARKETS,
-    SOCCER_SPORT_KEYS,
-    _MARKET_LABELS,
-    _nba_market_set,
-    _nfl_market_set,
-    _sport_titles,
-    get_api_key,
-    supported_sport_key,
 )
 from services.odds.normalization import (  # noqa: F401
     _commence_time_utc,
@@ -53,11 +56,11 @@ from services.odds.normalization import (  # noqa: F401
     _parse_commence,
     _shells_from_bet_picks,
     _utc_iso_z,
+    _zone,
     filter_picks_by_game_day,
     implied_probability,
     local_day_bounds_utc,
     shells_from_scheduled_events,
-    _zone,
 )
 from services.odds.parser import (  # noqa: F401
     _book_allowed,
@@ -75,21 +78,17 @@ from services.odds.ranking import (  # noqa: F401
     picks_to_json,
     rank_score,
 )
-from services.odds.demo import demo_picks  # noqa: F401
-from services.odds.client import (  # noqa: F401
-    ODDS_BASE,
-    MAX_PROP_EVENTS_PER_SPORT,
-    _BOOKMAKERS_PARAM,
-    _ODDS_REGIONS,
-    _PROP_FETCH_CONCURRENCY,
-    _fetch_bulk_h2h,
-    _fetch_event_props,
-    _fetch_events,
-    _fetch_prop_sport,
-    _note_odds_api_quota_issue,
-    _odds_api_warning_message,
+from services.odds.sports import (  # noqa: F401
+    _MARKET_LABELS,
+    NBA_PROP_MARKETS,
+    NFL_PROP_MARKETS,
+    SOCCER_SPORT_KEYS,
+    _nba_market_set,
+    _nfl_market_set,
+    _sport_titles,
+    get_api_key,
+    supported_sport_key,
 )
-
 
 # ---------------------------------------------------------------------------
 # Orchestration
@@ -258,7 +257,7 @@ async def fetch_best_picks(
         batch: list[BetPick] = []
         shell_batch: list[dict[str, Any]] = []
         for res in gathered:
-            if isinstance(res, Exception):
+            if isinstance(res, BaseException):
                 continue
             picks_part, shells_part = res
             batch.extend(picks_part)
@@ -269,9 +268,9 @@ async def fetch_best_picks(
 
     seen_keys: dict[tuple[str, str], dict[str, Any]] = {}
     for s in all_shells:
-        key = _merge_game_key(s.get("sport_key"), s.get("event_id"))
-        if key not in seen_keys:
-            seen_keys[key] = s
+        game_key = _merge_game_key(s.get("sport_key"), s.get("event_id"))
+        if game_key not in seen_keys:
+            seen_keys[game_key] = s
     shells_unique = list(seen_keys.values())
     shells_filtered = _filter_shells_by_game_key(shells_unique, for_day, timezone_name)
 
