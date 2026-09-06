@@ -36,6 +36,8 @@ def isolated_env(monkeypatch: pytest.MonkeyPatch) -> None:
         "RENDER",
         "ENVIRONMENT",
         "ENV",
+        "METRICS_ADMIN_TOKEN",
+        "CORS_ALLOWED_ORIGINS",
     ):
         monkeypatch.delenv(name, raising=False)
 

@@ -114,6 +114,9 @@ pip install -r requirements.txt
 # Optional logging (see "Application logging" below):
 # LOG_LEVEL=INFO
 # LOG_FORMAT=text
+#
+# Metrics admin token (required to read GET /api/metrics):
+# METRICS_ADMIN_TOKEN=choose-a-long-random-secret
 
 uvicorn main:app --reload
 ```
@@ -141,12 +144,33 @@ Operational events are logged from:
 
 ### Odds API metrics (BET-9)
 
-Process-local metrics are exported at `GET /api/metrics` (no credentials are stored or exposed).
+Process-local metrics are exported at `GET /api/metrics` (no credentials are stored or
+exposed in the payload). The endpoint is **admin-only**: set `METRICS_ADMIN_TOKEN` and
+send it on every request.
 
 | Format | URL | Use |
 | --- | --- | --- |
 | Prometheus text (default) | `/api/metrics` | Scrapers / Render metrics sidecars |
-| JSON snapshot | `/api/metrics?format=json` | Ad-hoc inspection in a browser or `curl` |
+| JSON snapshot | `/api/metrics?format=json` | Ad-hoc inspection |
+
+Auth (either header works):
+
+```bash
+# Bearer
+curl -s -H "Authorization: Bearer $METRICS_ADMIN_TOKEN" \
+  "https://bettor.studio/api/metrics?format=json"
+
+# Or dedicated header
+curl -s -H "X-Metrics-Token: $METRICS_ADMIN_TOKEN" \
+  "http://localhost:8000/api/metrics?format=json"
+```
+
+| Status | Meaning |
+| --- | --- |
+| `401` | Missing/wrong token |
+| `503` | `METRICS_ADMIN_TOKEN` not set on the server |
+
+On Render: **Environment → add `METRICS_ADMIN_TOKEN`** (sync: false / secret).
 
 Key series and how to read them:
 
@@ -178,7 +202,7 @@ How to use:
 
 Useful API checks:
 - `GET /api/health` - verifies service up and whether live odds key is configured.
-- `GET /api/metrics` - Odds API / cache / HTTP metrics (Prometheus text; `?format=json` for JSON).
+- `GET /api/metrics` - Odds API / cache / HTTP metrics (admin token required; `?format=json` for JSON).
 - `GET /api/picks?date=YYYY-MM-DD&timezone=America/New_York`
 - `GET /api/picks/game?sport_key=basketball_nba&event_id=<id>&date=YYYY-MM-DD&timezone=America/New_York`
 

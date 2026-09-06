@@ -206,7 +206,13 @@ class TestCacheAndPipelineMetrics:
 
 
 class TestMetricsEndpoint:
-    def test_prometheus_export(self, client):
+    @pytest.fixture(autouse=True)
+    def metrics_admin_token(self, monkeypatch: pytest.MonkeyPatch) -> str:
+        token = "test-metrics-admin-token"
+        monkeypatch.setenv("METRICS_ADMIN_TOKEN", token)
+        return token
+
+    def test_prometheus_export(self, client, metrics_admin_token):
         metrics.record_odds_api_request(
             endpoint="bulk_h2h",
             market="h2h",
@@ -215,7 +221,10 @@ class TestMetricsEndpoint:
             duration_seconds=0.12,
             status_code=200,
         )
-        response = client.get("/api/metrics")
+        response = client.get(
+            "/api/metrics",
+            headers={"Authorization": f"Bearer {metrics_admin_token}"},
+        )
         assert response.status_code == 200
         assert "text/plain" in response.headers["content-type"]
         body = response.text
@@ -223,21 +232,47 @@ class TestMetricsEndpoint:
         assert 'outcome="success"' in body
         assert "bettor_uptime_seconds" in body
 
-    def test_json_export(self, client):
+    def test_json_export(self, client, metrics_admin_token):
         metrics.record_cache_result("hit")
-        response = client.get("/api/metrics", params={"format": "json"})
+        response = client.get(
+            "/api/metrics",
+            params={"format": "json"},
+            headers={"X-Metrics-Token": metrics_admin_token},
+        )
         assert response.status_code == 200
         data = response.json()
         assert "counters" in data
         assert "gauges" in data
         assert "histograms" in data
 
-    def test_http_latency_recorded_separately_from_metrics_path(self, client):
+    def test_rejects_missing_credentials(self, client):
+        response = client.get("/api/metrics")
+        assert response.status_code == 401
+
+    def test_rejects_wrong_token(self, client):
+        response = client.get(
+            "/api/metrics",
+            headers={"Authorization": "Bearer wrong-token"},
+        )
+        assert response.status_code == 401
+
+    def test_unavailable_when_token_not_configured(self, client, monkeypatch):
+        monkeypatch.delenv("METRICS_ADMIN_TOKEN", raising=False)
+        response = client.get(
+            "/api/metrics",
+            headers={"Authorization": "Bearer anything"},
+        )
+        assert response.status_code == 503
+
+    def test_http_latency_recorded_separately_from_metrics_path(self, client, metrics_admin_token):
         # Hitting /api/health should record HTTP metrics; /api/metrics should not.
         assert client.get("/api/health").status_code == 200
         before = _counter_value("bettor_http_requests_total", method="GET", path="/api/health", status_code="200")
         assert before >= 1
-        client.get("/api/metrics")
+        client.get(
+            "/api/metrics",
+            headers={"Authorization": f"Bearer {metrics_admin_token}"},
+        )
         assert (
             _counter_value(
                 "bettor_http_requests_total",
