@@ -43,8 +43,7 @@ jobs:
           set -e
           mkdir -p _site
           cp -a frontend/. _site/
-          mkdir -p _site/how-it-works _site/supported-leagues
-          cp _site/how-it-works.html _site/how-it-works/index.html
+          mkdir -p _site/supported-leagues
           cp _site/supported-leagues.html _site/supported-leagues/index.html
           touch _site/.nojekyll
           if [ -n "$API_BASE_URL" ]; then
