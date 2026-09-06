@@ -33,13 +33,39 @@ _SECRET_KEY_RE = re.compile(
     re.IGNORECASE,
 )
 # Value-aware patterns for secrets embedded in free-form messages / tracebacks.
-# Keeps the label/prefix and replaces only the credential value.
-_SECRET_VALUE_RE = re.compile(
-    r"(?i)("
-    r"(?:api[_-]?key|token|password|passwd|secret)\s*[:=]\s*"
-    r"|authorization\s*[:=]\s*(?:bearer\s+)?"
-    r"|bearer\s+"
-    r")([^\s&;,\"']+)"
+# Each pattern keeps the label/prefix (group 1) and redacts only the credential.
+_SECRET_VALUE_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
+    # Authorization: remainder of the header line (Bearer, Basic, Digest, …)
+    (
+        re.compile(r"(?i)(authorization\s*[:=]\s*)([^\r\n]+)"),
+        r"\1[redacted]",
+    ),
+    # Bare "Bearer <token>" outside an Authorization header
+    (
+        re.compile(r"(?i)(\bbearer\s+)(\S+)"),
+        r"\1[redacted]",
+    ),
+    # Unquoted key=value / key: value
+    (
+        re.compile(
+            r"(?i)((?:api[_-]?key|token|password|passwd|secret)\s*[:=]\s*)([^\s&;,\"']+)"
+        ),
+        r"\1[redacted]",
+    ),
+    # JSON / quoted: "apiKey":"secret"
+    (
+        re.compile(
+            r'(?i)("(?:api[_-]?key|token|password|passwd|secret)"\s*:\s*")([^"]*)(")'
+        ),
+        r"\1[redacted]\3",
+    ),
+    # Single-quoted: 'api_key': 'secret'
+    (
+        re.compile(
+            r"(?i)('(?:api[_-]?key|token|password|passwd|secret)'\s*:\s*')([^']*)(')"
+        ),
+        r"\1[redacted]\3",
+    ),
 )
 _CONFIGURED = False
 
@@ -67,13 +93,17 @@ def get_log_format() -> str:
 def redact_secrets_in_text(text: str) -> str:
     """Redact credential values embedded in free-form text.
 
-    Covers shapes such as ``apiKey=...``, ``api_key: ...``, and
-    ``Authorization: Bearer ...`` so rendered log messages and exception
+    Covers unquoted forms (``apiKey=...``), quoted JSON
+    (``"apiKey":"..."``), and Authorization headers for any scheme
+    (``Bearer``, ``Basic``, …) so rendered log messages and exception
     tracebacks cannot leak secrets even when they are not structured extras.
     """
     if not text:
         return text
-    return _SECRET_VALUE_RE.sub(r"\1[redacted]", text)
+    out = text
+    for pattern, repl in _SECRET_VALUE_PATTERNS:
+        out = pattern.sub(repl, out)
+    return out
 
 
 def _redact_value(key: str, value: Any) -> Any:

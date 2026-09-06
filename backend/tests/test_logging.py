@@ -163,6 +163,19 @@ class TestValueAwareSecretRedaction:
         assert "tokensecret" not in redact_secrets_in_text("Authorization: Bearer tokensecret")
         assert "[redacted]" in redact_secrets_in_text("Authorization: Bearer tokensecret")
 
+    def test_redacts_authorization_basic(self) -> None:
+        raw = "upstream 401 Authorization: Basic dXNlcjpwYXNz"
+        redacted = redact_secrets_in_text(raw)
+        assert "dXNlcjpwYXNz" not in redacted
+        assert "Authorization: [redacted]" in redacted
+
+    def test_redacts_quoted_json_apikey(self) -> None:
+        raw = '{"apiKey":"supersecret","sport":"nba"}'
+        redacted = redact_secrets_in_text(raw)
+        assert "supersecret" not in redacted
+        assert '"apiKey":"[redacted]"' in redacted
+        assert '"sport":"nba"' in redacted
+
     def test_json_formatter_redacts_secrets_in_message(self) -> None:
         record = logging.LogRecord(
             name="bettor.test",
