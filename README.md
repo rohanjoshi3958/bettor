@@ -32,6 +32,10 @@ Tradeoffs considered:
 AI exceeded expectations in rapid refactors and issue triage, and fell short when deployment platform settings required exact environment-specific configuration that still needed human confirmation.
 
 ## Architecture / Design Decisions
+
+How picks are line-shopped, scored, and filtered is documented in Linear:
+[How Bettor Picks Work](https://linear.app/rjplayground/document/how-bettor-picks-work-439225773016).
+
 Backend/frontend structure:
 - `backend/`: FastAPI app, Odds API integration, cache layer, and a dependency-free ranking engine (`services/ranking.py`).
 - `frontend/`: static HTML/CSS/JS client that calls backend JSON endpoints.
