@@ -31,6 +31,11 @@ def isolated_env(monkeypatch: pytest.MonkeyPatch) -> None:
         "PICKS_CACHE_TTL_SECONDS",
         "MAX_PROP_EVENTS_PER_SPORT",
         "ODDS_PROP_CONCURRENCY",
+        "LOG_LEVEL",
+        "LOG_FORMAT",
+        "RENDER",
+        "ENVIRONMENT",
+        "ENV",
     ):
         monkeypatch.delenv(name, raising=False)
 

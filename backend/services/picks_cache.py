@@ -7,6 +7,7 @@ Set PICKS_CACHE_TTL_SECONDS (default 90). Use 0 to disable.
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
 import time
 from collections.abc import Awaitable, Callable
@@ -15,6 +16,7 @@ from dataclasses import dataclass, field
 from typing import Any, TypeVar
 
 T = TypeVar("T")
+logger = logging.getLogger("bettor.cache")
 
 # fetch_best_picks / fetch_picks_for_event return a tuple whose last element is odds_api_warning.
 def _odds_warning_on_result(result: Any) -> str | None:
@@ -62,6 +64,26 @@ async def _release_key_lock(key: str, entry: _KeyLock) -> None:
             del _key_locks[key]
 
 
+async def _await_release_key_lock(key: str, entry: _KeyLock) -> None:
+    """Await key-lock release without letting cancellation strand waiters.
+
+    ``cached_fetch`` may already be cancelled when it reaches ``finally``. An
+    ``await`` on ``_meta_lock`` inside release can then raise ``CancelledError``
+    before ``waiters`` is decremented, leaving orphaned ``_key_locks`` entries.
+    Shield the cleanup task and keep waiting through repeated cancellation.
+    """
+    cleanup = asyncio.create_task(_release_key_lock(key, entry))
+    try:
+        await asyncio.shield(cleanup)
+    except asyncio.CancelledError:
+        while not cleanup.done():
+            try:
+                await asyncio.shield(cleanup)
+            except asyncio.CancelledError:
+                pass
+        raise
+
+
 def _prune_expired() -> None:
     now = time.monotonic()
     dead = [k for k, (exp, _) in _cache.items() if exp <= now]
@@ -80,6 +102,7 @@ async def cached_fetch(
     """
     ttl = picks_cache_ttl_seconds()
     if ttl <= 0:
+        logger.info("picks_cache_bypass", extra={"cache_key": cache_key, "ttl_seconds": ttl})
         return await factory(), False
 
     entry = await _acquire_key_lock(cache_key)
@@ -90,11 +113,18 @@ async def cached_fetch(
             if cache_key in _cache:
                 exp, val = _cache[cache_key]
                 if exp > now:
+                    logger.info("picks_cache_hit", extra={"cache_key": cache_key})
                     return deepcopy(val), True
 
             fresh = await factory()
             if _odds_warning_on_result(fresh) is None:
                 _cache[cache_key] = (now + ttl, fresh)
+                logger.info("picks_cache_miss", extra={"cache_key": cache_key, "stored": True})
+            else:
+                logger.info(
+                    "picks_cache_miss",
+                    extra={"cache_key": cache_key, "stored": False, "reason": "odds_api_warning"},
+                )
             return deepcopy(fresh), False
     finally:
-        await _release_key_lock(cache_key, entry)
+        await _await_release_key_lock(cache_key, entry)
