@@ -64,6 +64,26 @@ async def _release_key_lock(key: str, entry: _KeyLock) -> None:
             del _key_locks[key]
 
 
+async def _await_release_key_lock(key: str, entry: _KeyLock) -> None:
+    """Await key-lock release without letting cancellation strand waiters.
+
+    ``cached_fetch`` may already be cancelled when it reaches ``finally``. An
+    ``await`` on ``_meta_lock`` inside release can then raise ``CancelledError``
+    before ``waiters`` is decremented, leaving orphaned ``_key_locks`` entries.
+    Shield the cleanup task and keep waiting through repeated cancellation.
+    """
+    cleanup = asyncio.create_task(_release_key_lock(key, entry))
+    try:
+        await asyncio.shield(cleanup)
+    except asyncio.CancelledError:
+        while not cleanup.done():
+            try:
+                await asyncio.shield(cleanup)
+            except asyncio.CancelledError:
+                pass
+        raise
+
+
 def _prune_expired() -> None:
     now = time.monotonic()
     dead = [k for k, (exp, _) in _cache.items() if exp <= now]
@@ -107,4 +127,4 @@ async def cached_fetch(
                 )
             return deepcopy(fresh), False
     finally:
-        await _release_key_lock(cache_key, entry)
+        await _await_release_key_lock(cache_key, entry)

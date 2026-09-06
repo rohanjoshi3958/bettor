@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import sys
 
 import pytest
 
@@ -392,4 +393,46 @@ class TestPerKeyLocking:
         await asyncio.gather(
             *[picks_cache.cached_fetch(f"k{i}", Counter()) for i in range(50)],
         )
+        assert picks_cache._key_locks == {}
+
+    @pytest.mark.skipif(sys.version_info < (3, 11), reason="cancellation cleanup asserted for Python 3.11+")
+    async def test_second_cancellation_during_lock_release_still_removes_key_lock(
+        self, monkeypatch: pytest.MonkeyPatch
+    ):
+        """A cancel while release awaits ``_meta_lock`` must not orphan the entry."""
+        release_entered = asyncio.Event()
+        allow_release = asyncio.Event()
+        real_release = picks_cache._release_key_lock
+
+        async def blocked_release(key: str, entry: picks_cache._KeyLock) -> None:
+            release_entered.set()
+            await allow_release.wait()
+            await real_release(key, entry)
+
+        monkeypatch.setattr(picks_cache, "_release_key_lock", blocked_release)
+
+        factory_entered = asyncio.Event()
+        hold_factory = asyncio.Event()
+
+        async def slow_factory():
+            factory_entered.set()
+            await hold_factory.wait()
+            return ("payload", None)
+
+        task = asyncio.create_task(picks_cache.cached_fetch("cancel-key", slow_factory))
+        await factory_entered.wait()
+        assert "cancel-key" in picks_cache._key_locks
+
+        task.cancel()
+        await release_entered.wait()
+        assert "cancel-key" in picks_cache._key_locks
+
+        # Second cancellation while cleanup is blocked (simulating wait on _meta_lock).
+        task.cancel()
+        await asyncio.sleep(0)
+
+        allow_release.set()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
         assert picks_cache._key_locks == {}
