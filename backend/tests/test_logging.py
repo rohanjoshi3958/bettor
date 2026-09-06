@@ -15,6 +15,7 @@ from app.logging_config import (
     get_log_format,
     get_log_level,
     log_event,
+    redact_secrets_in_text,
     request_id_var,
     sanitize_log_extra,
 )
@@ -155,6 +156,65 @@ class TestLogEvent:
             log.handlers.clear()
 
 
+class TestValueAwareSecretRedaction:
+    def test_redacts_apikey_and_bearer_in_text(self) -> None:
+        assert "supersecret" not in redact_secrets_in_text("failed apiKey=supersecret")
+        assert "apiKey=[redacted]" in redact_secrets_in_text("failed apiKey=supersecret")
+        assert "tokensecret" not in redact_secrets_in_text("Authorization: Bearer tokensecret")
+        assert "[redacted]" in redact_secrets_in_text("Authorization: Bearer tokensecret")
+
+    def test_json_formatter_redacts_secrets_in_message(self) -> None:
+        record = logging.LogRecord(
+            name="bettor.test",
+            level=logging.ERROR,
+            pathname=__file__,
+            lineno=1,
+            msg="upstream failed apiKey=leaked-secret-value",
+            args=(),
+            exc_info=None,
+        )
+        line = JsonFormatter().format(record)
+        payload = json.loads(line)
+        assert "leaked-secret-value" not in line
+        assert payload["message"] == "upstream failed apiKey=[redacted]"
+
+    def test_json_formatter_redacts_secrets_in_traceback(self) -> None:
+        try:
+            raise RuntimeError("Authorization: Bearer traceback-secret-token")
+        except RuntimeError:
+            record = logging.LogRecord(
+                name="bettor.test",
+                level=logging.ERROR,
+                pathname=__file__,
+                lineno=1,
+                msg="boom",
+                args=(),
+                exc_info=True,
+            )
+            # Attach current exception info explicitly for the formatter.
+            import sys
+
+            record.exc_info = sys.exc_info()
+        line = JsonFormatter().format(record)
+        payload = json.loads(line)
+        assert "traceback-secret-token" not in line
+        assert "[redacted]" in payload["exc_info"]
+
+    def test_text_formatter_redacts_secrets_in_message(self) -> None:
+        record = logging.LogRecord(
+            name="bettor.test",
+            level=logging.WARNING,
+            pathname=__file__,
+            lineno=1,
+            msg="retry api_key=plaintext-secret",
+            args=(),
+            exc_info=None,
+        )
+        line = TextFormatter(datefmt="%Y-%m-%dT%H:%M:%S").format(record)
+        assert "plaintext-secret" not in line
+        assert "api_key=[redacted]" in line
+
+
 class TestRequestLoggingMiddleware:
     def test_adds_request_id_and_echoes_incoming(self, client) -> None:
         response = client.get("/api/health", headers={"X-Request-ID": "fixed-id-123"})
@@ -186,3 +246,24 @@ class TestRequestLoggingMiddleware:
         assert "request_id" in payload
         assert "api_key" not in payload
         assert "apiKey" not in payload
+
+    def test_request_id_header_on_unhandled_500(self) -> None:
+        """Unhandled exceptions must still return X-Request-ID (CodeRabbit)."""
+        from fastapi import FastAPI
+        from fastapi.testclient import TestClient
+
+        from app.middleware import RequestLoggingMiddleware
+
+        boom = FastAPI()
+
+        @boom.get("/boom")
+        def boom_route() -> None:
+            raise RuntimeError("intentional failure for logging test")
+
+        boom.add_middleware(RequestLoggingMiddleware)
+
+        with TestClient(boom, raise_server_exceptions=False) as test_client:
+            response = test_client.get("/boom", headers={"X-Request-ID": "err-req-42"})
+
+        assert response.status_code == 500
+        assert response.headers.get("X-Request-ID") == "err-req-42"

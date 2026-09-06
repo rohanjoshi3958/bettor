@@ -32,6 +32,15 @@ _SECRET_KEY_RE = re.compile(
     r"(api[_-]?key|authorization|passwd|password|secret|token)",
     re.IGNORECASE,
 )
+# Value-aware patterns for secrets embedded in free-form messages / tracebacks.
+# Keeps the label/prefix and replaces only the credential value.
+_SECRET_VALUE_RE = re.compile(
+    r"(?i)("
+    r"(?:api[_-]?key|token|password|passwd|secret)\s*[:=]\s*"
+    r"|authorization\s*[:=]\s*(?:bearer\s+)?"
+    r"|bearer\s+"
+    r")([^\s&;,\"']+)"
+)
 _CONFIGURED = False
 
 
@@ -55,6 +64,18 @@ def get_log_format() -> str:
     return "text"
 
 
+def redact_secrets_in_text(text: str) -> str:
+    """Redact credential values embedded in free-form text.
+
+    Covers shapes such as ``apiKey=...``, ``api_key: ...``, and
+    ``Authorization: Bearer ...`` so rendered log messages and exception
+    tracebacks cannot leak secrets even when they are not structured extras.
+    """
+    if not text:
+        return text
+    return _SECRET_VALUE_RE.sub(r"\1[redacted]", text)
+
+
 def _redact_value(key: str, value: Any) -> Any:
     if _SECRET_KEY_RE.search(key):
         return "[redacted]"
@@ -62,11 +83,13 @@ def _redact_value(key: str, value: Any) -> Any:
         return {k: _redact_value(str(k), v) for k, v in value.items()}
     if isinstance(value, list):
         return [_redact_value(key, v) for v in value]
+    if isinstance(value, str):
+        return redact_secrets_in_text(value)
     return value
 
 
 def sanitize_log_extra(extra: dict[str, Any]) -> dict[str, Any]:
-    """Copy *extra* with secret-looking keys redacted."""
+    """Copy *extra* with secret-looking keys and embedded values redacted."""
     return {k: _redact_value(str(k), v) for k, v in extra.items()}
 
 
@@ -116,14 +139,14 @@ class JsonFormatter(logging.Formatter):
             .replace("+00:00", "Z"),
             "level": record.levelname,
             "logger": record.name,
-            "message": record.getMessage(),
+            "message": redact_secrets_in_text(record.getMessage()),
         }
         for key, value in record.__dict__.items():
             if key in self._RESERVED or key.startswith("_"):
                 continue
             payload[key] = value
         if record.exc_info:
-            payload["exc_info"] = self.formatException(record.exc_info)
+            payload["exc_info"] = redact_secrets_in_text(self.formatException(record.exc_info))
         return json.dumps(sanitize_log_extra(payload), default=str, ensure_ascii=False)
 
 
@@ -133,7 +156,8 @@ class TextFormatter(logging.Formatter):
     _SKIP = JsonFormatter._RESERVED | {"message", "asctime"}
 
     def format(self, record: logging.LogRecord) -> str:
-        base = f"{self.formatTime(record, self.datefmt)} {record.levelname} [{record.name}] {record.getMessage()}"
+        msg = redact_secrets_in_text(record.getMessage())
+        base = f"{self.formatTime(record, self.datefmt)} {record.levelname} [{record.name}] {msg}"
         extras: list[str] = []
         for key, value in record.__dict__.items():
             if key in self._SKIP or key.startswith("_"):
@@ -143,7 +167,7 @@ class TextFormatter(logging.Formatter):
         if extras:
             base = f"{base} {' '.join(extras)}"
         if record.exc_info:
-            base = f"{base}\n{self.formatException(record.exc_info)}"
+            base = f"{base}\n{redact_secrets_in_text(self.formatException(record.exc_info))}"
         return base
 
 
