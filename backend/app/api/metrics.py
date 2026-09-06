@@ -33,7 +33,11 @@ def _provided_token(
 def _tokens_match(provided: str, expected: str) -> bool:
     if len(provided) != len(expected):
         return False
-    return secrets.compare_digest(provided, expected)
+    try:
+        return secrets.compare_digest(provided, expected)
+    except TypeError:
+        # compare_digest rejects non-ASCII strings; treat as auth failure, not 500.
+        return False
 
 
 def require_metrics_admin(

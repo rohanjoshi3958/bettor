@@ -256,6 +256,12 @@ class TestMetricsEndpoint:
         )
         assert response.status_code == 401
 
+    def test_tokens_match_treats_non_ascii_as_mismatch(self, metrics_admin_token):
+        from app.api.metrics import _tokens_match
+
+        # Same length, non-ASCII — compare_digest would raise TypeError without the guard.
+        assert _tokens_match("é" * len(metrics_admin_token), metrics_admin_token) is False
+
     def test_unavailable_when_token_not_configured(self, client, monkeypatch):
         monkeypatch.delenv("METRICS_ADMIN_TOKEN", raising=False)
         response = client.get(
