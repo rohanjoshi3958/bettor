@@ -13,10 +13,12 @@ import uuid
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from app.logging_config import log_event, request_id_var
+from services.odds_metrics import record_http_request
 
 logger = logging.getLogger("bettor.http")
 
 _SKIP_PREFIXES = ("/assets/",)
+_SKIP_EXACT = frozenset({"/api/metrics"})
 
 
 class RequestLoggingMiddleware:
@@ -101,7 +103,8 @@ class RequestLoggingMiddleware:
                 raise
         finally:
             duration_ms = round((time.perf_counter() - started) * 1000, 2)
-            if not any(path.startswith(p) for p in _SKIP_PREFIXES):
+            skip_log = any(path.startswith(p) for p in _SKIP_PREFIXES) or path in _SKIP_EXACT
+            if not skip_log:
                 log_event(
                     logger,
                     logging.INFO,
@@ -112,5 +115,11 @@ class RequestLoggingMiddleware:
                     status_code=status_code,
                     duration_ms=duration_ms,
                     client_host=client_host,
+                )
+                record_http_request(
+                    method=method,
+                    path=path,
+                    status_code=status_code,
+                    duration_seconds=duration_ms / 1000.0,
                 )
             request_id_var.reset(token)

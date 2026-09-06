@@ -139,6 +139,34 @@ Operational events are logged from:
 - `bettor.odds.client` — Odds API HTTP / transport / timeout / invalid-JSON failures (never logs the API key)
 - `bettor.odds.service` — slate / single-game fetch outcomes (source, counts, warning flags)
 
+### Odds API metrics (BET-9)
+
+Process-local metrics are exported at `GET /api/metrics` (no credentials are stored or exposed).
+
+| Format | URL | Use |
+| --- | --- | --- |
+| Prometheus text (default) | `/api/metrics` | Scrapers / Render metrics sidecars |
+| JSON snapshot | `/api/metrics?format=json` | Ad-hoc inspection in a browser or `curl` |
+
+Key series and how to read them:
+
+| Metric | Meaning |
+| --- | --- |
+| `bettor_odds_api_requests_total` | Outbound Odds API attempts by `endpoint`, `market`, `sport_key`, `outcome` |
+| `bettor_odds_api_success_total` / `bettor_odds_api_errors_total` | Success vs failure rollups |
+| `bettor_odds_api_http_status_total` | HTTP status distribution (includes 429 and 402) |
+| `bettor_odds_api_rate_limit_total` | Distinct 429 counter (rate limit) |
+| `bettor_odds_api_quota_exhausted_total` | Distinct 402 counter (quota/billing) |
+| `bettor_odds_api_timeouts_total` | Upstream timeouts |
+| `bettor_odds_api_request_duration_seconds` | **Upstream** Odds API latency histogram (independent of handler time) |
+| `bettor_odds_api_quota_remaining` / `bettor_odds_api_quota_used` | Last seen `x-requests-*` headers from The Odds API |
+| `bettor_picks_cache_requests_total` | Cache `hit` / `miss` / `bypass` for hit-ratio |
+| `bettor_odds_api_warnings_total` | User-facing warning frequency (`rate_limit` vs `payment_required`) |
+| `bettor_odds_relaxed_fallback_total` | Ranking fell back to the relaxed implied-probability floor |
+| `bettor_http_request_duration_seconds` | **Total** inbound API handler latency (`/api/picks`, etc.) |
+
+Compare `bettor_odds_api_request_duration_seconds` with `bettor_http_request_duration_seconds` to separate upstream pressure from app/handler time. Metrics are in-memory per process (not shared across multiple Render instances).
+
 ## Demo
 How to use:
 1. Open the app homepage.
@@ -150,6 +178,7 @@ How to use:
 
 Useful API checks:
 - `GET /api/health` - verifies service up and whether live odds key is configured.
+- `GET /api/metrics` - Odds API / cache / HTTP metrics (Prometheus text; `?format=json` for JSON).
 - `GET /api/picks?date=YYYY-MM-DD&timezone=America/New_York`
 - `GET /api/picks/game?sport_key=basketball_nba&event_id=<id>&date=YYYY-MM-DD&timezone=America/New_York`
 
@@ -226,6 +255,7 @@ Coverage by area (`backend/tests/`):
 - `test_fetch_slate.py` / `test_fetch_event.py` - demo/live source selection, partial-failure degradation, warning propagation.
 - `test_api_picks.py` - `/api/health`, `/api/picks`, `/api/picks/game`: response envelopes, validation errors, cache headers, concurrent-request de-duplication.
 - `test_logging.py` - JSON/text formatters, secret redaction, `LOG_*` env defaults, request-id middleware and request completion logs.
+- `test_odds_metrics.py` - Odds API latency/status/429/402 metrics, cache hit ratio, Prometheus/JSON export, credential exclusion.
 - `test_suite_guardrails.py` - proves the suite itself cannot use a real key or real network.
 - `test_module_boundaries.py` - verifies the odds service module split: each layer's isolation, dependency graph (no upward/cross-layer imports), and that every public symbol is re-exported from `service.py`.
 

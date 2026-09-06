@@ -67,6 +67,15 @@ def clean_picks_cache() -> None:
 
 
 @pytest.fixture(autouse=True)
+def clean_odds_metrics() -> None:
+    from services.odds_metrics import reset_metrics
+
+    reset_metrics()
+    yield
+    reset_metrics()
+
+
+@pytest.fixture(autouse=True)
 def instant_sleep(monkeypatch: pytest.MonkeyPatch) -> list[float]:
     """Collapse the service's retry backoff; the returned list records requested delays."""
     return install_instant_sleep(monkeypatch)
