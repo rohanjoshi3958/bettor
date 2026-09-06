@@ -1,5 +1,6 @@
 # Render Blueprint: https://dashboard.render.com/select-repo?type=blueprint
 # After deploy: Dashboard → this service → Environment → add THE_ODDS_API_KEY
+# and METRICS_ADMIN_TOKEN (secret). Optionally CORS_ALLOWED_ORIGINS.
 # Then set GitHub secret BETTOR_API_BASE_URL to your service URL (https://…, no slash).
 
 services:
@@ -13,4 +14,6 @@ services:
     healthCheckPath: /api/health
     envVars:
       - key: THE_ODDS_API_KEY
+        sync: false
+      - key: METRICS_ADMIN_TOKEN
         sync: false

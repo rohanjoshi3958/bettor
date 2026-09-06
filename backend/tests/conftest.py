@@ -36,6 +36,8 @@ def isolated_env(monkeypatch: pytest.MonkeyPatch) -> None:
         "RENDER",
         "ENVIRONMENT",
         "ENV",
+        "METRICS_ADMIN_TOKEN",
+        "CORS_ALLOWED_ORIGINS",
     ):
         monkeypatch.delenv(name, raising=False)
 
@@ -64,6 +66,15 @@ def clean_picks_cache() -> None:
     reset_picks_cache()
     yield
     reset_picks_cache()
+
+
+@pytest.fixture(autouse=True)
+def clean_odds_metrics() -> None:
+    from services.odds_metrics import reset_metrics
+
+    reset_metrics()
+    yield
+    reset_metrics()
 
 
 @pytest.fixture(autouse=True)

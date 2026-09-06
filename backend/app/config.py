@@ -44,6 +44,18 @@ def get_cors_origins() -> list[str]:
     return list(_DEFAULT_DEV_ORIGINS)
 
 
+def get_metrics_admin_token() -> str | None:
+    """Shared secret required to read ``GET /api/metrics``.
+
+    Set ``METRICS_ADMIN_TOKEN`` in the environment (Render / ``backend/.env``).
+    Callers must send it as ``Authorization: Bearer <token>`` or
+    ``X-Metrics-Token: <token>``. When unset, the metrics endpoint refuses all
+    requests so the route cannot stay accidentally public.
+    """
+    raw = os.environ.get("METRICS_ADMIN_TOKEN", "").strip()
+    return raw or None
+
+
 def load_environment() -> None:
     """Load `.env` from repo root, then `backend/.env` (overrides)."""
     load_dotenv(REPO_ROOT / ".env")

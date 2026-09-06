@@ -15,6 +15,8 @@ from copy import deepcopy
 from dataclasses import dataclass, field
 from typing import Any, TypeVar
 
+from services.odds_metrics import record_cache_result
+
 T = TypeVar("T")
 logger = logging.getLogger("bettor.cache")
 
@@ -103,6 +105,7 @@ async def cached_fetch(
     ttl = picks_cache_ttl_seconds()
     if ttl <= 0:
         logger.info("picks_cache_bypass", extra={"cache_key": cache_key, "ttl_seconds": ttl})
+        record_cache_result("bypass")
         return await factory(), False
 
     entry = await _acquire_key_lock(cache_key)
@@ -114,6 +117,7 @@ async def cached_fetch(
                 exp, val = _cache[cache_key]
                 if exp > now:
                     logger.info("picks_cache_hit", extra={"cache_key": cache_key})
+                    record_cache_result("hit")
                     return deepcopy(val), True
 
             fresh = await factory()
@@ -125,6 +129,7 @@ async def cached_fetch(
                     "picks_cache_miss",
                     extra={"cache_key": cache_key, "stored": False, "reason": "odds_api_warning"},
                 )
+            record_cache_result("miss")
             return deepcopy(fresh), False
     finally:
         await _await_release_key_lock(cache_key, entry)

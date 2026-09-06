@@ -300,7 +300,12 @@ class FakeOddsAPI:
         return httpx.Response(
             200,
             content=json.dumps(spec),
-            headers={"content-type": "application/json"},
+            headers={
+                "content-type": "application/json",
+                # Default quota headers so instrumentation tests can observe gauges.
+                "x-requests-remaining": "5000",
+                "x-requests-used": "100",
+            },
         )
 
 

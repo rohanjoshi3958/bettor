@@ -6,6 +6,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
+from app.api.metrics import router as metrics_router
 from app.api.pages import router as pages_router
 from app.api.picks import router as picks_router
 from app.config import STATIC, get_cors_origins, load_environment
@@ -30,6 +31,7 @@ app.add_middleware(
 app.add_middleware(RequestLoggingMiddleware)
 
 app.include_router(picks_router)
+app.include_router(metrics_router)
 app.include_router(pages_router)
 
 app.mount(

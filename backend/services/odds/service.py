@@ -90,8 +90,30 @@ from services.odds.sports import (  # noqa: F401
     get_api_key,
     supported_sport_key,
 )
+from services.odds_metrics import record_odds_warning, record_relaxed_fallback
 
 logger = logging.getLogger("bettor.odds.service")
+
+# ---------------------------------------------------------------------------
+# Orchestration helpers
+# ---------------------------------------------------------------------------
+
+def _emit_pipeline_metrics(
+    *,
+    quota_events: list[str],
+    has_usable_response: bool,
+    used_relaxed_fallback: bool,
+    warn: str | None,
+) -> None:
+    if used_relaxed_fallback:
+        record_relaxed_fallback()
+    if not warn:
+        return
+    if "rate_limit" in quota_events:
+        record_odds_warning(kind="rate_limit", has_usable_response=has_usable_response)
+    elif "payment_required" in quota_events:
+        record_odds_warning(kind="payment_required", has_usable_response=has_usable_response)
+
 
 # ---------------------------------------------------------------------------
 # Orchestration
@@ -128,6 +150,8 @@ async def fetch_picks_for_event(
         if games:
             g0 = games[0]
             if _kickoff_still_upcoming(g0):
+                if relaxed:
+                    record_relaxed_fallback()
                 logger.info(
                     "fetch_picks_for_event_completed",
                     extra={
@@ -140,6 +164,8 @@ async def fetch_picks_for_event(
                     },
                 )
                 return g0, "demo", mi_used, relaxed, None
+        if relaxed:
+            record_relaxed_fallback()
         logger.info(
             "fetch_picks_for_event_completed",
             extra={
@@ -198,6 +224,12 @@ async def fetch_picks_for_event(
     )
     has_picks = any(len(g.get("picks") or []) > 0 for g in games)
     warn = _odds_api_warning_message(quota_events, has_usable_response=has_picks)
+    _emit_pipeline_metrics(
+        quota_events=quota_events,
+        has_usable_response=has_picks,
+        used_relaxed_fallback=relaxed,
+        warn=warn,
+    )
 
     def _complete(game: dict[str, Any] | None) -> tuple[dict[str, Any] | None, str, float, bool, str | None]:
         logger.info(
@@ -250,6 +282,8 @@ async def fetch_best_picks(
         shells = _shells_from_bet_picks(demo)
         merged = _merge_scheduled_with_picks(shells, games, max_games=max_games)
         merged = _exclude_past_kickoff_games(merged)
+        if relaxed:
+            record_relaxed_fallback()
         logger.info(
             "fetch_best_picks_completed",
             extra={
@@ -344,6 +378,12 @@ async def fetch_best_picks(
     warn = _odds_api_warning_message(
         quota_events,
         has_usable_response=len(merged) > 0,
+    )
+    _emit_pipeline_metrics(
+        quota_events=quota_events,
+        has_usable_response=len(merged) > 0,
+        used_relaxed_fallback=relaxed,
+        warn=warn,
     )
     logger.info(
         "fetch_best_picks_completed",
