@@ -11,6 +11,7 @@ import os
 import time
 from collections.abc import Awaitable, Callable
 from copy import deepcopy
+from dataclasses import dataclass, field
 from typing import Any, TypeVar
 
 T = TypeVar("T")
@@ -22,8 +23,17 @@ def _odds_warning_on_result(result: Any) -> str | None:
     w = result[-1]
     return w if isinstance(w, str) and w else None
 
+
+@dataclass
+class _KeyLock:
+    """Per-key mutex with a waiter count so idle locks can be dropped safely."""
+
+    lock: asyncio.Lock = field(default_factory=asyncio.Lock)
+    waiters: int = 0
+
+
 _meta_lock = asyncio.Lock()
-_key_locks: dict[str, asyncio.Lock] = {}
+_key_locks: dict[str, _KeyLock] = {}
 _cache: dict[str, tuple[float, Any]] = {}
 
 
@@ -35,11 +45,21 @@ def picks_cache_ttl_seconds() -> float:
         return 90.0
 
 
-async def _lock_for(key: str) -> asyncio.Lock:
+async def _acquire_key_lock(key: str) -> _KeyLock:
     async with _meta_lock:
-        if key not in _key_locks:
-            _key_locks[key] = asyncio.Lock()
-        return _key_locks[key]
+        entry = _key_locks.get(key)
+        if entry is None:
+            entry = _KeyLock()
+            _key_locks[key] = entry
+        entry.waiters += 1
+        return entry
+
+
+async def _release_key_lock(key: str, entry: _KeyLock) -> None:
+    async with _meta_lock:
+        entry.waiters -= 1
+        if entry.waiters == 0 and _key_locks.get(key) is entry:
+            del _key_locks[key]
 
 
 def _prune_expired() -> None:
@@ -62,16 +82,19 @@ async def cached_fetch(
     if ttl <= 0:
         return await factory(), False
 
-    lock = await _lock_for(cache_key)
-    async with lock:
-        _prune_expired()
-        now = time.monotonic()
-        if cache_key in _cache:
-            exp, val = _cache[cache_key]
-            if exp > now:
-                return deepcopy(val), True
+    entry = await _acquire_key_lock(cache_key)
+    try:
+        async with entry.lock:
+            _prune_expired()
+            now = time.monotonic()
+            if cache_key in _cache:
+                exp, val = _cache[cache_key]
+                if exp > now:
+                    return deepcopy(val), True
 
-        fresh = await factory()
-        if _odds_warning_on_result(fresh) is None:
-            _cache[cache_key] = (now + ttl, fresh)
-        return deepcopy(fresh), False
+            fresh = await factory()
+            if _odds_warning_on_result(fresh) is None:
+                _cache[cache_key] = (now + ttl, fresh)
+            return deepcopy(fresh), False
+    finally:
+        await _release_key_lock(cache_key, entry)

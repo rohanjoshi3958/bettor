@@ -285,14 +285,111 @@ class TestPerKeyLocking:
             await picks_cache.cached_fetch("k", boom)
         assert picks_cache._cache == {}
 
-    async def test_locks_are_reused_per_key(self):
+    async def test_concurrent_callers_share_one_key_lock(self):
+        """While a fetch is in flight, every waiter must sit on the same mutex."""
+        started = asyncio.Event()
+        release = asyncio.Event()
+
+        async def slow_factory():
+            started.set()
+            await release.wait()
+            return (["slate"], None)
+
+        first = asyncio.create_task(picks_cache.cached_fetch("k", slow_factory))
+        await started.wait()
+        in_flight = picks_cache._key_locks["k"]
+        assert in_flight.waiters >= 1
+
+        second = asyncio.create_task(picks_cache.cached_fetch("k", Counter()))
+        for _ in range(50):
+            await asyncio.sleep(0)
+            if in_flight.waiters == 2:
+                break
+
+        assert picks_cache._key_locks["k"] is in_flight
+        assert in_flight.waiters == 2
+
+        release.set()
+        await asyncio.gather(first, second)
+        assert picks_cache._key_locks == {}
+
+    async def test_idle_key_locks_are_removed_after_the_last_waiter(self):
         await picks_cache.cached_fetch("k", Counter())
-        first_lock = picks_cache._key_locks["k"]
-        await picks_cache.cached_fetch("k", Counter())
-        assert picks_cache._key_locks["k"] is first_lock
+        assert picks_cache._key_locks == {}
+
+    async def test_a_new_lock_is_created_after_the_previous_one_is_released(self):
+        started = asyncio.Event()
+        release = asyncio.Event()
+
+        async def slow_factory():
+            started.set()
+            await release.wait()
+            return ("payload", None)
+
+        first = asyncio.create_task(picks_cache.cached_fetch("k", slow_factory))
+        await started.wait()
+        first_generation = picks_cache._key_locks["k"]
+        release.set()
+        await first
+        assert picks_cache._key_locks == {}
+
+        # Expire the cached entry so the next call must fetch again (and allocate a new lock).
+        picks_cache._cache.clear()
+
+        started2 = asyncio.Event()
+        release2 = asyncio.Event()
+
+        async def slow_factory2():
+            started2.set()
+            await release2.wait()
+            return ("payload", None)
+
+        second = asyncio.create_task(picks_cache.cached_fetch("k", slow_factory2))
+        await started2.wait()
+        second_generation = picks_cache._key_locks["k"]
+        release2.set()
+        await second
+
+        assert picks_cache._key_locks == {}
+        assert second_generation is not first_generation
 
     async def test_concurrent_first_touches_of_one_key_create_one_lock(self):
-        await asyncio.gather(
-            *[picks_cache.cached_fetch("k", Counter()) for _ in range(10)],
-        )
+        release = asyncio.Event()
+        calls = 0
+
+        async def slow_factory():
+            nonlocal calls
+            calls += 1
+            await release.wait()
+            return ("payload", None)
+
+        tasks = [
+            asyncio.create_task(picks_cache.cached_fetch("k", slow_factory)) for _ in range(10)
+        ]
+        for _ in range(50):
+            await asyncio.sleep(0)
+            entry = picks_cache._key_locks.get("k")
+            if entry is not None and entry.waiters == 10:
+                break
+
         assert list(picks_cache._key_locks) == ["k"]
+        assert picks_cache._key_locks["k"].waiters == 10
+
+        release.set()
+        await asyncio.gather(*tasks)
+        assert calls == 1
+        assert picks_cache._key_locks == {}
+
+    async def test_a_failing_fetch_still_drops_the_idle_lock(self):
+        async def boom():
+            raise RuntimeError("upstream exploded")
+
+        with pytest.raises(RuntimeError):
+            await picks_cache.cached_fetch("k", boom)
+        assert picks_cache._key_locks == {}
+
+    async def test_many_distinct_keys_do_not_leave_orphan_locks(self):
+        await asyncio.gather(
+            *[picks_cache.cached_fetch(f"k{i}", Counter()) for i in range(50)],
+        )
+        assert picks_cache._key_locks == {}
