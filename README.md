@@ -221,7 +221,7 @@ Coverage by area (`backend/tests/`):
 - `test_price_collection.py` - bookmaker allowlist, line shopping/edge math, malformed bookmaker payloads.
 - `test_grouping.py` - schedule shells, merging picks onto scheduled games, kickoff ordering, started-game exclusion.
 - `test_time_windows.py` - local day bounds (including DST transitions), timezone-dependent slate filtering, pickable-day window.
-- `test_picks_cache.py` - hit/miss, TTL expiry and bypass, copy-on-read isolation, warning results not cached, per-key locking under concurrent requests.
+- `test_picks_cache.py` - hit/miss, TTL expiry and bypass, copy-on-read isolation, warning results not cached, per-key locking under concurrent requests, idle lock cleanup.
 - `test_odds_upstream.py` - upstream request shape, 429/402/5xx handling, retry behavior, undecodable bodies, prop fan-out caps.
 - `test_fetch_slate.py` / `test_fetch_event.py` - demo/live source selection, partial-failure degradation, warning propagation.
 - `test_api_picks.py` - `/api/health`, `/api/picks`, `/api/picks/game`: response envelopes, validation errors, cache headers, concurrent-request de-duplication.
