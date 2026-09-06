@@ -201,6 +201,7 @@ async def _fetch_bulk_h2h(
     if commence_time_to:
         params["commenceTimeTo"] = commence_time_to
     duration = 0.0
+    http_status = 0
     try:
         r, duration = await _odds_get(
             client,
@@ -212,6 +213,7 @@ async def _fetch_bulk_h2h(
             sport_key=sport_key,
             quota_events=quota_events,
         )
+        http_status = r.status_code
         events = r.json()
         if not isinstance(events, list):
             _record_odds_outcome(
@@ -220,7 +222,7 @@ async def _fetch_bulk_h2h(
                 sport_key=sport_key,
                 outcome="invalid_json",
                 duration_seconds=duration,
-                status_code=r.status_code,
+                status_code=http_status,
             )
             return [], []
         _record_odds_outcome(
@@ -229,7 +231,7 @@ async def _fetch_bulk_h2h(
             sport_key=sport_key,
             outcome="success",
             duration_seconds=duration,
-            status_code=r.status_code,
+            status_code=http_status,
         )
         ordered = _events_sorted_by_kickoff(events)
         picks = _h2h_events_to_picks(ordered, sport_key, sport_title)
@@ -256,7 +258,7 @@ async def _fetch_bulk_h2h(
             sport_key=sport_key,
             outcome="invalid_json",
             duration_seconds=duration,
-            status_code=200,
+            status_code=http_status or None,
         )
         logger.warning(
             "odds_upstream_invalid_json",
@@ -280,6 +282,7 @@ async def _fetch_events(
     if commence_time_to:
         params["commenceTimeTo"] = commence_time_to
     duration = 0.0
+    http_status = 0
     try:
         r, duration = await _odds_get(
             client,
@@ -291,6 +294,7 @@ async def _fetch_events(
             sport_key=sport_key,
             quota_events=quota_events,
         )
+        http_status = r.status_code
         data = r.json()
         if not isinstance(data, list):
             _record_odds_outcome(
@@ -299,7 +303,7 @@ async def _fetch_events(
                 sport_key=sport_key,
                 outcome="invalid_json",
                 duration_seconds=duration,
-                status_code=r.status_code,
+                status_code=http_status,
             )
             return []
         _record_odds_outcome(
@@ -308,7 +312,7 @@ async def _fetch_events(
             sport_key=sport_key,
             outcome="success",
             duration_seconds=duration,
-            status_code=r.status_code,
+            status_code=http_status,
         )
         return data
     except httpx.HTTPStatusError as e:
@@ -331,7 +335,7 @@ async def _fetch_events(
             sport_key=sport_key,
             outcome="invalid_json",
             duration_seconds=duration,
-            status_code=200,
+            status_code=http_status or None,
         )
         logger.warning(
             "odds_upstream_invalid_json",
@@ -360,6 +364,7 @@ async def _fetch_event_props(
     }
     for attempt in range(2):
         duration = 0.0
+        http_status = 0
         try:
             r, duration = await _odds_get(
                 client,
@@ -371,6 +376,7 @@ async def _fetch_event_props(
                 sport_key=sport_key,
                 quota_events=quota_events,
             )
+            http_status = r.status_code
             ev = r.json()
             if not isinstance(ev, dict):
                 _record_odds_outcome(
@@ -379,7 +385,7 @@ async def _fetch_event_props(
                     sport_key=sport_key,
                     outcome="invalid_json",
                     duration_seconds=duration,
-                    status_code=r.status_code,
+                    status_code=http_status,
                 )
                 return []
             _record_odds_outcome(
@@ -388,7 +394,7 @@ async def _fetch_event_props(
                 sport_key=sport_key,
                 outcome="success",
                 duration_seconds=duration,
-                status_code=r.status_code,
+                status_code=http_status,
             )
             return _prop_event_to_picks(ev, sport_key, sport_title, allowed)
         except httpx.HTTPStatusError as e:
@@ -432,7 +438,7 @@ async def _fetch_event_props(
                 sport_key=sport_key,
                 outcome="invalid_json",
                 duration_seconds=duration,
-                status_code=200,
+                status_code=http_status or None,
             )
             logger.warning(
                 "odds_upstream_invalid_json",

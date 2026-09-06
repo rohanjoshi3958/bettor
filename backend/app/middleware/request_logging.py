@@ -102,7 +102,8 @@ class RequestLoggingMiddleware:
             else:
                 raise
         finally:
-            duration_ms = round((time.perf_counter() - started) * 1000, 2)
+            duration_seconds = time.perf_counter() - started
+            duration_ms = round(duration_seconds * 1000, 2)
             skip_log = any(path.startswith(p) for p in _SKIP_PREFIXES) or path in _SKIP_EXACT
             if not skip_log:
                 log_event(
@@ -120,6 +121,6 @@ class RequestLoggingMiddleware:
                     method=method,
                     path=path,
                     status_code=status_code,
-                    duration_seconds=duration_ms / 1000.0,
+                    duration_seconds=duration_seconds,
                 )
             request_id_var.reset(token)

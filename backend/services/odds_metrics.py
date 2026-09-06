@@ -28,7 +28,7 @@ _histograms: defaultdict[str, defaultdict[_LabelKey, dict[str, float]]] = defaul
 )
 # Gauges: name → float (last observed)
 _gauges: dict[str, float] = {}
-_started_at = time.time()
+_started_at = time.monotonic()
 
 
 def reset_metrics() -> None:
@@ -38,7 +38,7 @@ def reset_metrics() -> None:
         _histograms.clear()
         _gauges.clear()
         global _started_at
-        _started_at = time.time()
+        _started_at = time.monotonic()
 
 
 def _labels(**kwargs: str | int | None) -> _LabelKey:
@@ -203,7 +203,7 @@ def snapshot() -> MetricsSnapshot:
             histograms[hist_name] = sorted(rows, key=lambda r: sorted(r["labels"].items()))
 
         gauges = dict(_gauges)
-        uptime = time.time() - _started_at
+        uptime = time.monotonic() - _started_at
 
     return MetricsSnapshot(
         counters=counters,
